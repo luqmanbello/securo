@@ -19,13 +19,14 @@ import base64
 import httpx
 import json
 import ssl
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from app.providers.base import ProviderRateLimited, ProviderUserActionRequired
 
@@ -242,3 +243,51 @@ def _decode_public_key(doc: Any) -> rsa.RSAPublicKey:
         # key; refuse rather than encrypt the password to it.
         raise AccessBankError("config", "key")
     return key
+
+
+@dataclass
+class AccessBankSession:
+    """One authenticated session. Lives for the duration of one operation."""
+
+    token: str
+    customer_id: str
+    user_id: str
+
+
+def _encrypt_password(key: rsa.RSAPublicKey, password: str) -> str:
+    """RSA-OAEP with SHA-256 for both the digest and the MGF1 mask.
+
+    Ported from Go's `rsa.EncryptOAEP(sha256.New(), ...)`, which uses the one
+    supplied hash for both roles — so this is an exact match, not an
+    approximation.
+    """
+    ciphertext = key.encrypt(
+        password.encode("utf-8"),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
+    return base64.b64encode(ciphertext).decode("ascii")
+
+
+def _token_claims(token: Any, stage: str) -> dict:
+    """Decode a JWT payload WITHOUT verifying the signature.
+
+    The claims are not trusted for any security decision. They only supply the
+    ids the next request must echo, exactly as the bank's own browser client
+    does.
+    """
+    if not isinstance(token, str) or token.count(".") != 2:
+        raise AccessBankError(stage, "schema")
+    payload = token.split(".")[1]
+    padding_needed = "=" * (-len(payload) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(payload + padding_needed)
+    except (ValueError, TypeError) as exc:
+        raise AccessBankError(stage, "schema") from exc
+    claims = _loads(raw, stage)
+    if not isinstance(claims, dict):
+        raise AccessBankError(stage, "schema")
+    return claims

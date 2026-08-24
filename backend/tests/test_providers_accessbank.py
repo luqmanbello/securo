@@ -6,14 +6,15 @@ it. All HTTP is served by httpx.MockTransport. No test contacts the real bank.
 from __future__ import annotations
 
 import base64
+import json
 import ssl
 from datetime import date
 from decimal import Decimal
 
 import httpx
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa as crypto_rsa
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa as crypto_rsa
 
 from app.providers.accessbank import (
     _MAX_BODY_BYTES,
@@ -33,6 +34,8 @@ from app.providers.accessbank import (
     _decode_public_key,
     _read_body,
     _raise_for_status,
+    _encrypt_password,
+    _token_claims,
 )
 from app.providers.base import ProviderRateLimited, ProviderUserActionRequired
 
@@ -261,3 +264,54 @@ def test_read_body_rejects_an_oversized_body():
     response_normal = httpx.Response(200, content=normal_body)
     result = _read_body(response_normal, "transactions")
     assert result == normal_body
+
+
+def _jwt(payload: dict) -> str:
+    """A JWT whose signature is irrelevant — this client never verifies one."""
+    def seg(d: dict) -> str:
+        raw = json.dumps(d).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return f"{seg({'alg': 'none'})}.{seg(payload)}.signature"
+
+
+def test_encrypt_password_round_trips_under_oaep_sha256():
+    """Asserting on ciphertext bytes would be meaningless — OAEP is
+    randomised. Decrypt it back instead."""
+    private = _make_key(2048)
+    encoded = _encrypt_password(private.public_key(), "correct horse battery")
+    ciphertext = base64.b64decode(encoded)
+    plaintext = private.decrypt(
+        ciphertext,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
+    assert plaintext.decode("utf-8") == "correct horse battery"
+
+
+def test_encrypt_password_output_is_standard_base64():
+    private = _make_key(2048)
+    encoded = _encrypt_password(private.public_key(), "pw")
+    assert base64.b64encode(base64.b64decode(encoded)).decode("ascii") == encoded
+
+
+def test_token_claims_reads_customer_and_user_id():
+    token = _jwt({"customerId": "123456789", "userId": "someuserid"})
+    claims = _token_claims(token, "authenticate")
+    assert claims["customerId"] == "123456789"
+    assert claims["userId"] == "someuserid"
+
+
+def test_token_claims_handles_unpadded_segments():
+    """JWT payloads are base64url without padding."""
+    token = _jwt({"customerId": "1", "userId": "22"})
+    assert _token_claims(token, "authenticate")["customerId"] == "1"
+
+
+def test_token_claims_refuses_a_malformed_token():
+    for bad in ("", "onlyonepart", "two.parts", "a.!!!.c", None):
+        with pytest.raises(AccessBankError) as exc:
+            _token_claims(bad, "authenticate")
+        assert exc.value.category == "schema"
