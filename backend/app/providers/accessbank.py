@@ -479,13 +479,45 @@ class AccessBankProvider(BankProvider):
             )
             return self._map_accounts(_as_dict(doc, "accounts").get("data"))
 
+    def _map_transaction(self, row: Any) -> TransactionData:
+        if not isinstance(row, dict):
+            raise AccessBankError("transactions", "schema")
+        ref = row.get("transactionReferenceNo")
+        if not ref:
+            raise AccessBankError("transactions", "schema")
+        currency = row.get("transactionCurrency")
+        if not currency:
+            raise AccessBankError("transactions", "schema")
+        # `beneficiary` and `sender` use "" for absence while the *bank* fields
+        # use null. Neither may be read as the other.
+        narration = row.get("transactionNarration") or ""
+        return TransactionData(
+            external_id=str(ref),
+            description=narration,
+            amount=_parse_money(row.get("transactionAmount"), "transactions"),
+            date=_parse_date(row.get("transactionDate"), "transactions"),
+            type=_map_txn_type(row.get("transactionType"), "transactions"),
+            currency=str(currency),
+            payee=(row.get("sender") or None),
+        )
+
+    def _window_days(self, since: Optional[date]) -> int:
+        """Days to request. `since` narrows the window; it can never widen it
+        past the bank's own cap, which no parameter appears to lift."""
+        if since is None:
+            return _MAX_DAYS
+        elapsed = (date.today() - since).days
+        if elapsed < 1:
+            return 1
+        return min(elapsed, _MAX_DAYS)
+
     # --- Temporary stubs -------------------------------------------------
     # BankProvider is an ABC; these three methods are abstract on it, so
     # AccessBankProvider cannot be instantiated at all — not even for
-    # get_accounts — until every abstract method has *some* override. Task 6
-    # replaces get_transactions; Task 7 replaces handle_oauth_callback and
-    # refresh_credentials. Signatures match the ABC exactly so those tasks
-    # can drop a real implementation in without touching this stub's shape.
+    # get_accounts — until every abstract method has *some* override. Task 7
+    # replaces handle_oauth_callback and refresh_credentials. Signatures
+    # match the ABC exactly so that task can drop a real implementation in
+    # without touching this stub's shape.
 
     async def get_transactions(
         self,
@@ -494,7 +526,37 @@ class AccessBankProvider(BankProvider):
         since: Optional[date] = None,
         payee_source: str = "auto",
     ) -> list[TransactionData]:
-        raise NotImplementedError  # replaced by Task 6
+        days = str(self._window_days(since))
+        collected: list[TransactionData] = []
+
+        async with self._client() as client:
+            session = await self._open_session(client, credentials)
+            for page in range(1, _MAX_PAGES + 1):
+                doc = await self._post(
+                    client,
+                    _PATH_TRANSACTIONS,
+                    {
+                        # Casing differs from the accounts endpoint. Not a typo.
+                        "customerID": session.customer_id,
+                        "accountNo": str(account_external_id),
+                        "pageNumber": str(page),
+                        "pageSize": _PAGE_SIZE,
+                        "noOfDays": days,
+                        "userID": session.user_id,
+                    },
+                    "transactions",
+                    token=session.token,
+                )
+                rows = _as_dict(doc, "transactions").get("data")
+                if not isinstance(rows, list):
+                    raise AccessBankError("transactions", "schema")
+                collected.extend(self._map_transaction(row) for row in rows)
+                # No total is returned, so a short page is the only signal
+                # that the history has been exhausted.
+                if len(rows) < int(_PAGE_SIZE):
+                    break
+
+        return collected
 
     async def handle_oauth_callback(self, code: str) -> ConnectionData:
         raise NotImplementedError  # replaced by Task 7

@@ -8,7 +8,7 @@ from __future__ import annotations
 import base64
 import json
 import ssl
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -542,3 +542,204 @@ async def test_get_accounts_rejects_a_non_dict_response():
     with _install_transport(handler):
         with pytest.raises(AccessBankError):
             await AccessBankProvider().get_accounts(_CREDS)
+
+
+def _txn(ref: str, amount, ttype: str = "DEBIT", day: str = "23-AUG-2026") -> dict:
+    return {
+        "transactionReferenceNo": ref,
+        "externalRef": None,
+        "transactionAmount": amount,
+        "transactionCurrency": "USD",
+        "transactionDate": day,
+        "transactionType": ttype,
+        "banktype": None,
+        "beneficiarybank": None,
+        "transactionNarration": "ATM WITHDRAWAL",
+        "sender": "SOMEONE",
+        "beneficiary": "",
+        "beneficiaryaccount": None,
+        "transactionCategory": "ATM",
+    }
+
+
+def _paging_bank(pages: list[list[dict]], private_key, seen: list[dict]):
+    """A fake bank returning `pages[n-1]` for pageNumber n."""
+    doc = _config_doc(private_key.public_key())
+    token = _jwt({"customerId": "123456789", "userId": "theuserid"})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=doc)
+        if request.url.path == _PATH_AUTHENTICATE:
+            return httpx.Response(200, json={"data": {"idToken": token}})
+        if request.url.path == _PATH_TRANSACTIONS:
+            body = json.loads(request.content)
+            seen.append(body)
+            index = int(body["pageNumber"]) - 1
+            rows = pages[index] if index < len(pages) else []
+            # `json=` would reject a Decimal amount outright (it isn't
+            # JSON-serializable); encode it as a bare numeric literal, same
+            # shape the real bank sends, rather than quoting it as a string.
+            payload = json.dumps(
+                {"statusCode": 200, "description": None, "data": rows},
+                default=lambda o: float(o) if isinstance(o, Decimal) else str(o),
+            )
+            return httpx.Response(
+                200, content=payload.encode(), headers={"content-type": "application/json"}
+            )
+        return httpx.Response(404)
+
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_stops_on_a_short_page():
+    """Page 1 full, page 2 short — verified live: 20 rows then 15."""
+    key = _make_key(2048)
+    seen: list[dict] = []
+    pages = [[_txn(f"ref{i:03d}", 10) for i in range(20)],
+             [_txn(f"ref1{i:02d}", 20) for i in range(15)]]
+    with _install_transport(_paging_bank(pages, key, seen)):
+        result = await AccessBankProvider().get_transactions(_CREDS, "9876543210")
+
+    assert len(result) == 35
+    assert [b["pageNumber"] for b in seen] == ["1", "2"]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_stops_at_the_hard_page_cap():
+    """A server that always returns a full page must not loop forever."""
+    key = _make_key(2048)
+    seen: list[dict] = []
+    pages = [[_txn(f"r{p}-{i}", 1) for i in range(20)] for p in range(_MAX_PAGES + 5)]
+    with _install_transport(_paging_bank(pages, key, seen)):
+        result = await AccessBankProvider().get_transactions(_CREDS, "9876543210")
+
+    assert len(seen) == _MAX_PAGES
+    assert len(result) == _MAX_PAGES * 20
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_sends_the_documented_request():
+    key = _make_key(2048)
+    seen: list[dict] = []
+    with _install_transport(_paging_bank([[]], key, seen)):
+        await AccessBankProvider().get_transactions(_CREDS, "9876543210")
+
+    body = seen[0]
+    # Note the casing: this endpoint takes customerID/userID, unlike accounts.
+    assert set(body) == {"customerID", "accountNo", "pageNumber", "pageSize", "noOfDays", "userID"}
+    assert body["accountNo"] == "9876543210"
+    assert body["pageSize"] == _PAGE_SIZE
+    assert body["noOfDays"] == str(_MAX_DAYS)
+    assert all(isinstance(v, str) for v in body.values())
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_clamps_the_window_to_the_bank_maximum():
+    """`since` narrows the window but can never widen it past the bank's cap."""
+    key = _make_key(2048)
+    seen: list[dict] = []
+    long_ago = date(2020, 1, 1)
+    with _install_transport(_paging_bank([[]], key, seen)):
+        await AccessBankProvider().get_transactions(_CREDS, "9876543210", since=long_ago)
+    assert seen[0]["noOfDays"] == str(_MAX_DAYS)
+
+    seen.clear()
+    recent = date.today() - timedelta(days=3)
+    with _install_transport(_paging_bank([[]], key, seen)):
+        await AccessBankProvider().get_transactions(_CREDS, "9876543210", since=recent)
+    assert int(seen[0]["noOfDays"]) <= _MAX_DAYS
+    assert int(seen[0]["noOfDays"]) >= 3
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_maps_fields_and_keeps_money_exact():
+    key = _make_key(2048)
+    seen: list[dict] = []
+    pages = [[_txn("REF0000000000001", Decimal("2350.10"), "CREDIT", "09-AUG-2026")]]
+    with _install_transport(_paging_bank(pages, key, seen)):
+        result = await AccessBankProvider().get_transactions(_CREDS, "9876543210")
+
+    txn = result[0]
+    assert txn.external_id == "REF0000000000001"
+    assert txn.amount == Decimal("2350.10")
+    assert isinstance(txn.amount, Decimal)
+    assert txn.type == "credit"
+    assert txn.date == date(2026, 8, 9)
+    assert txn.currency == "USD"
+    assert txn.description == "ATM WITHDRAWAL"
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_survives_a_raw_float_in_the_payload():
+    """The bank sends bare JSON numbers. Decoding must produce Decimal, so an
+    amount that has no exact float representation must survive intact."""
+    key = _make_key(2048)
+    seen: list[dict] = []
+
+    doc = _config_doc(key.public_key())
+    token = _jwt({"customerId": "1", "userId": "theuserid"})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=doc)
+        if request.url.path == _PATH_AUTHENTICATE:
+            return httpx.Response(200, json={"data": {"idToken": token}})
+        # Hand-written JSON so the number stays a bare literal on the wire.
+        raw = ('{"statusCode":200,"description":null,"data":[{'
+               '"transactionReferenceNo":"R1","externalRef":null,'
+               '"transactionAmount":1234567.89,"transactionCurrency":"USD",'
+               '"transactionDate":"23-AUG-2026","transactionType":"DEBIT",'
+               '"banktype":null,"beneficiarybank":null,'
+               '"transactionNarration":"X","sender":"Y","beneficiary":"",'
+               '"beneficiaryaccount":null,"transactionCategory":"POS"}]}')
+        return httpx.Response(200, content=raw.encode(), headers={"content-type": "application/json"})
+
+    with _install_transport(handler):
+        result = await AccessBankProvider().get_transactions(_CREDS, "9876543210")
+
+    assert result[0].amount == Decimal("1234567.89")
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_aborts_on_an_unknown_type():
+    key = _make_key(2048)
+    seen: list[dict] = []
+    pages = [[_txn("R1", Decimal("1.00"), "REVERSAL")]]
+    with _install_transport(_paging_bank(pages, key, seen)):
+        with pytest.raises(AccessBankError) as exc:
+            await AccessBankProvider().get_transactions(_CREDS, "9876543210")
+    assert exc.value.category == "type"
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_aborts_on_an_unknown_date_format():
+    key = _make_key(2048)
+    seen: list[dict] = []
+    pages = [[_txn("R1", Decimal("1.00"), "DEBIT", "2026-08-23")]]
+    with _install_transport(_paging_bank(pages, key, seen)):
+        with pytest.raises(AccessBankError) as exc:
+            await AccessBankProvider().get_transactions(_CREDS, "9876543210")
+    assert exc.value.category == "date"
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_rejects_a_non_dict_response():
+    """A top-level JSON list from the transactions endpoint must raise
+    AccessBankError, not AttributeError, from indexing a non-dict."""
+    key = _make_key(2048)
+    token = _jwt({"customerId": "123456789", "userId": "theuserid"})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=_config_doc(key.public_key()))
+        if request.url.path == _PATH_AUTHENTICATE:
+            return httpx.Response(200, json={"data": {"idToken": token}})
+        if request.url.path == _PATH_TRANSACTIONS:
+            return httpx.Response(200, json=[1, 2, 3])
+        return httpx.Response(404)
+
+    with _install_transport(handler):
+        with pytest.raises(AccessBankError):
+            await AccessBankProvider().get_transactions(_CREDS, "9876543210")
