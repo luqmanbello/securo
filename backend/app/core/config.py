@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     simplefin_enabled: bool = False
     simplefin_api_url: str = "https://beta-bridge.simplefin.org"
 
+    # Access Bank (Nigeria) — read-only balance and transaction import.
+    # Credentials are supplied per-connection and stored encrypted on the
+    # connection row; this flag only decides whether the provider registers.
+    accessbank_enabled: bool = False
+    accessbank_base_url: str = "https://ibank.accessbankplc.com"
+
     # Frontend
     frontend_url: str = "http://localhost:5173"
 
