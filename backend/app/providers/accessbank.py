@@ -511,14 +511,6 @@ class AccessBankProvider(BankProvider):
             return 1
         return min(elapsed, _MAX_DAYS)
 
-    # --- Temporary stubs -------------------------------------------------
-    # BankProvider is an ABC; these three methods are abstract on it, so
-    # AccessBankProvider cannot be instantiated at all — not even for
-    # get_accounts — until every abstract method has *some* override. Task 7
-    # replaces handle_oauth_callback and refresh_credentials. Signatures
-    # match the ABC exactly so that task can drop a real implementation in
-    # without touching this stub's shape.
-
     async def get_transactions(
         self,
         credentials: dict,
@@ -558,8 +550,50 @@ class AccessBankProvider(BankProvider):
 
         return collected
 
+    @staticmethod
+    def _decode_claim_payload(code: str) -> dict:
+        """The connect screen posts the credentials as a JSON blob.
+
+        `handle_oauth_callback` is the interface's entry point for claiming a
+        connection, so it carries the credentials here rather than an OAuth
+        code — the same repurposing SimpleFIN does for its setup token.
+        """
+        try:
+            payload = json.loads(code)
+        except (ValueError, TypeError) as exc:
+            raise AccessBankError("connect", "schema") from exc
+        if not isinstance(payload, dict):
+            raise AccessBankError("connect", "schema")
+        user_id = payload.get("user_id") or ""
+        password = payload.get("password") or ""
+        if not user_id or not password:
+            raise ProviderUserActionRequired(
+                "Enter both your Access Bank user id and password.",
+                code="accessbank_credential_missing",
+            )
+        return {"user_id": user_id, "password": password}
+
     async def handle_oauth_callback(self, code: str) -> ConnectionData:
-        raise NotImplementedError  # replaced by Task 7
+        credentials = self._decode_claim_payload(code)
+        async with self._client() as client:
+            session = await self._open_session(client, credentials)
+            doc = await self._post(
+                client,
+                _PATH_ACCOUNTS,
+                {"customerId": session.customer_id, "userId": session.user_id},
+                "accounts",
+                token=session.token,
+            )
+            accounts = self._map_accounts(_as_dict(doc, "accounts").get("data"))
+
+        return ConnectionData(
+            external_id=session.customer_id,
+            institution_name="Access Bank",
+            credentials=credentials,
+            accounts=accounts,
+        )
 
     async def refresh_credentials(self, credentials: dict) -> dict:
-        raise NotImplementedError  # replaced by Task 7
+        """No-op. There is no refresh token; every operation authenticates
+        afresh and the bearer token never outlives it."""
+        return credentials

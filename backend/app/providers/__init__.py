@@ -41,6 +41,14 @@ KNOWN_PROVIDERS = [
         "requires_institution_select": False,
         "supports_asset_sync": True,
     },
+    {
+        "name": "accessbank",
+        "display_name": "Access Bank",
+        "description": "Nigerian bank via internet-banking, balances and transactions",
+        "flow_type": "credentials",
+        "requires_institution_select": False,
+        "supports_asset_sync": False,
+    },
 ]
 
 
@@ -93,6 +101,10 @@ def _auto_register_providers() -> None:
     if settings.simplefin_enabled:
         from app.providers.simplefin import SimpleFinProvider
         register_provider("simplefin", SimpleFinProvider)
+
+    if settings.accessbank_enabled:
+        from app.providers.accessbank import AccessBankProvider
+        register_provider("accessbank", AccessBankProvider)
 
 
 _auto_register_providers()

@@ -743,3 +743,84 @@ async def test_get_transactions_rejects_a_non_dict_response():
     with _install_transport(handler):
         with pytest.raises(AccessBankError):
             await AccessBankProvider().get_transactions(_CREDS, "9876543210")
+
+
+from app.providers import all_known_providers, get_provider, register_provider
+
+
+@pytest.mark.asyncio
+async def test_handle_oauth_callback_claims_credentials_and_returns_accounts():
+    """The credential-claim step: validate the credentials by using them once,
+    and hand back the accounts they unlock."""
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "9876543210", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "2350.10"},
+    ]
+    code = json.dumps({"user_id": "theuserid", "password": "hunter2"})
+    with _install_transport(_bank(accounts, key)):
+        connection = await AccessBankProvider().handle_oauth_callback(code)
+
+    assert connection.institution_name == "Access Bank"
+    assert connection.external_id == "123456789"
+    assert connection.credentials == {"user_id": "theuserid", "password": "hunter2"}
+    assert len(connection.accounts) == 1
+    assert connection.accounts[0].currency == "USD"
+
+
+@pytest.mark.asyncio
+async def test_handle_oauth_callback_refuses_a_malformed_payload():
+    for bad in ("not json", json.dumps({"user_id": "x"}), json.dumps({}), ""):
+        with pytest.raises((ProviderUserActionRequired, AccessBankError)):
+            await AccessBankProvider().handle_oauth_callback(bad)
+
+
+@pytest.mark.asyncio
+async def test_handle_oauth_callback_rejects_a_non_dict_response():
+    """A top-level JSON list from the accounts endpoint during the claim flow
+    must raise AccessBankError, not AttributeError, from indexing a
+    non-dict."""
+    key = _make_key(2048)
+    token = _jwt({"customerId": "123456789", "userId": "theuserid"})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=_config_doc(key.public_key()))
+        if request.url.path == _PATH_AUTHENTICATE:
+            return httpx.Response(200, json={"data": {"idToken": token}})
+        if request.url.path == _PATH_ACCOUNTS:
+            return httpx.Response(200, json=[1, 2, 3])
+        return httpx.Response(404)
+
+    code = json.dumps({"user_id": "theuserid", "password": "hunter2"})
+    with _install_transport(handler):
+        with pytest.raises(AccessBankError):
+            await AccessBankProvider().handle_oauth_callback(code)
+
+
+@pytest.mark.asyncio
+async def test_unreadable_stored_credential_asks_for_re_entry():
+    """Upstream's decrypt() returns None on a rotated SECRET_KEY, which would
+    otherwise present as 'not configured' and silently do nothing."""
+    with pytest.raises(ProviderUserActionRequired) as exc:
+        await AccessBankProvider().get_accounts({"user_id": "x", "password": None})
+    assert "re-enter" in str(exc.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_refresh_credentials_is_a_no_op():
+    """There is no refresh token — every operation re-authenticates."""
+    creds = {"user_id": "theuserid", "password": "hunter2"}
+    assert await AccessBankProvider().refresh_credentials(creds) == creds
+
+
+def test_provider_is_listed_as_known():
+    entry = next(p for p in all_known_providers() if p["name"] == "accessbank")
+    assert entry["flow_type"] == "credentials"
+    assert entry["requires_institution_select"] is False
+
+
+def test_provider_resolves_from_the_registry_once_registered():
+    register_provider("accessbank", AccessBankProvider)
+    assert isinstance(get_provider("accessbank"), AccessBankProvider)
