@@ -340,11 +340,41 @@ Cases that must exist, each corresponding to a rule above:
   visible error rather than a wrong number, which is the best available outcome.
 - **The bank password is stored**, as described above.
 
+## The account that actually matters is the USD one
+
+The owner clarified on 2026-08-24 that the Access Bank **USD (domiciliary)** account
+is the one worth importing; the naira account is not needed.
+
+This barely moves the design — the provider returns every account the bank lists and
+Securo links the ones the owner picks, so "only USD" is a linking choice, not a code
+path. Three things do change:
+
+1. **The discovery was performed against the naira account.** The endpoint contract
+   recorded above came from Premier Savings. A domiciliary account can sit on a
+   different product code and is not guaranteed to return the same shape, or to be
+   listed identically by `fetch-customer-account-details`. This must be re-verified
+   against the USD account before implementation. It is the one genuinely unverified
+   assumption in this document.
+2. **FX largely disappears for this account.** With Securo's primary currency set to
+   USD and the account denominated in USD, no conversion happens: no rate lookup, no
+   frozen rate, no OpenExchangeRates dependency, and none of the 1:1-fallback hazard
+   noted during the probe. That hazard applies only to holdings in other currencies.
+3. **The ambiguity rule now hinges on the USD side.** `worth`'s rule — two accounts
+   sharing one currency map nothing — fires only if the bank lists more than one USD
+   account. Whether it does is unknown and is part of the re-verification above.
+
+Whether NGN support is needed at all is a separate question from this provider: it
+depends on whether naira holdings are tracked in Securo by hand, not on what the
+importer reads.
+
 ## Open items to resolve during implementation
 
 These are decisions already made; what is missing is a live sample to pin them
 against, and each has a defined fail-closed default in the meantime.
 
-1. The exact `transactionDate` format string.
-2. The complete set of `transactionType` values.
-3. Whether `pageSize` may exceed 20, which would reduce request count.
+1. **Re-verify the whole contract against the USD account** — see the section above.
+   This is the highest-priority item; the other three can be answered in the same
+   session.
+2. The exact `transactionDate` format string.
+3. The complete set of `transactionType` values.
+4. Whether `pageSize` may exceed 20, which would reduce request count.
