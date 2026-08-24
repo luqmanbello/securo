@@ -10,6 +10,7 @@ import json
 import ssl
 from datetime import date, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx
@@ -446,6 +447,45 @@ async def test_get_accounts_maps_balances():
 
 
 @pytest.mark.asyncio
+async def test_get_accounts_sends_the_login_username_not_the_claim():
+    """F1 (revised): worth's Go client (internal/bank/bank.go) proves the
+    ACCOUNTS request sends the LOGIN username as userId, alongside the
+    claim-sourced customerId -- unlike the transactions request, which uses
+    the claim (see test_get_transactions_sends_the_documented_request). The
+    claim userId fixture value ("bank-side-user", from _bank()) is
+    deliberately different from _CREDS["user_id"] ("theuserid"), so this can
+    actually fail if the module regresses to sending the claim here."""
+    key = _make_key(2048)
+    seen: list[dict] = []
+    doc = _config_doc(key.public_key())
+    token = _jwt({"customerId": "123456789", "userId": "bank-side-user"})
+    accounts = [
+        {"accountNumber": "9876543210", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "2350.10"},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=doc)
+        if request.url.path == _PATH_AUTHENTICATE:
+            return httpx.Response(200, json={"data": {"idToken": token}})
+        if request.url.path == _PATH_ACCOUNTS:
+            seen.append(json.loads(request.content))
+            return httpx.Response(200, json={"data": accounts})
+        return httpx.Response(404)
+
+    with _install_transport(handler):
+        await AccessBankProvider().get_accounts(_CREDS)
+
+    body = seen[0]
+    assert set(body) == {"customerId", "userId"}
+    assert body["customerId"] == "123456789"
+    assert body["userId"] == _CREDS["user_id"]  # "theuserid" -- the LOGIN username
+    assert body["userId"] != "bank-side-user"  # NOT the claim
+
+
+@pytest.mark.asyncio
 async def test_get_accounts_allows_a_negative_balance():
     """F2's guard lives in `_map_transaction`, NOT `_parse_money` -- a
     negative `availableBalance` is a legitimate overdraft and must keep
@@ -665,6 +705,101 @@ async def test_get_accounts_never_filters_on_status_not_equal_active():
 
     assert len(result) == 1
     assert result[0].external_id == "0000000001"
+
+
+def _with_import_currencies(raw: str):
+    """Patch app.core.config.get_settings for the duration of a `with`
+    block, returning a stub exposing only accessbank_import_currencies --
+    the only setting `_map_accounts` reads."""
+    return patch("app.core.config.get_settings", return_value=SimpleNamespace(
+        accessbank_import_currencies=raw,
+    ))
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_filters_to_the_configured_currency():
+    """Owner decision: accessbank_import_currencies scopes which currencies
+    get auto-imported on connect -- the owner tracks their naira account by
+    hand and does not want it auto-imported."""
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "0123456789", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "NGN",
+         "availableBalance": "1500000.00"},
+        {"accountNumber": "9876543210", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "2350.10"},
+    ]
+    with _install_transport(_bank(accounts, key)), _with_import_currencies("USD"):
+        result = await AccessBankProvider().get_accounts(_CREDS)
+
+    assert len(result) == 1
+    assert result[0].currency == "USD"
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_imports_everything_when_the_setting_is_empty():
+    """Empty accessbank_import_currencies means import everything --
+    today's behaviour is unchanged by default."""
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "0123456789", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "NGN",
+         "availableBalance": "1500000.00"},
+        {"accountNumber": "9876543210", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "2350.10"},
+    ]
+    with _install_transport(_bank(accounts, key)), _with_import_currencies(""):
+        result = await AccessBankProvider().get_accounts(_CREDS)
+
+    assert len(result) == 2
+    assert {a.currency for a in result} == {"NGN", "USD"}
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_currency_filter_runs_before_the_ambiguity_check():
+    """Ordering guarantee: filtering to USD must happen BEFORE the
+    same-currency ambiguity check, so two NGN accounts (which would
+    otherwise be ambiguous) can never abort a USD-only import."""
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "0000000001", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "NGN",
+         "availableBalance": "1.00"},
+        {"accountNumber": "0000000002", "accountType": "CURRENT",
+         "accountStatus": "ACTIVE", "accountCurrency": "NGN",
+         "availableBalance": "2.00"},
+        {"accountNumber": "0000000003", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "3.00"},
+    ]
+    with _install_transport(_bank(accounts, key)), _with_import_currencies("USD"):
+        result = await AccessBankProvider().get_accounts(_CREDS)
+
+    assert len(result) == 1
+    assert result[0].currency == "USD"
+    assert result[0].external_id == "0000000003"
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_currency_filter_tolerates_case_and_whitespace():
+    """The setting is compared on the uppercase code, and whitespace around
+    each entry is tolerated."""
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "0123456789", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "NGN",
+         "availableBalance": "1500000.00"},
+        {"accountNumber": "9876543210", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "2350.10"},
+    ]
+    with _install_transport(_bank(accounts, key)), _with_import_currencies(" usd , ngn "):
+        result = await AccessBankProvider().get_accounts(_CREDS)
+
+    assert len(result) == 2
+    assert {a.currency for a in result} == {"NGN", "USD"}
 
 
 @pytest.mark.asyncio

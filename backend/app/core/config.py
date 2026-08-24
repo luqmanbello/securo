@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     # connection row; this flag only decides whether the provider registers.
     accessbank_enabled: bool = False
     accessbank_base_url: str = "https://ibank.accessbankplc.com"
+    # Comma-separated ISO currency codes to import on connect (e.g. "USD").
+    # Empty means import every currency the bank returns -- the historical
+    # default. Case and surrounding whitespace are tolerated; compared
+    # uppercase. Owner decision: the owner tracks their naira account by
+    # hand and does not want it auto-imported.
+    accessbank_import_currencies: str = ""
 
     # Frontend
     frontend_url: str = "http://localhost:5173"

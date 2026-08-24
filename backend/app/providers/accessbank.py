@@ -248,6 +248,14 @@ def _map_txn_type(raw: Any, stage: str) -> str:
     return _TXN_TYPES[raw]
 
 
+def _parse_currency_allowlist(raw: str) -> set[str]:
+    """Parse `accessbank_import_currencies`: comma-separated, whitespace
+    tolerated around each code, compared uppercase. An empty (or
+    all-whitespace) setting yields an empty set, which callers treat as
+    "import every currency" -- the historical default."""
+    return {code.strip().upper() for code in raw.split(",") if code.strip()}
+
+
 def _raise_for_status(status: int, stage: str) -> None:
     """Map a bank status onto Securo's provider exceptions, stage-aware.
 
@@ -354,11 +362,29 @@ def _decode_public_key(doc: Any) -> rsa.RSAPublicKey:
 
 @dataclass
 class AccessBankSession:
-    """One authenticated session. Lives for the duration of one operation."""
+    """One authenticated session. Lives for the duration of one operation.
+
+    Two different "user id" values are carried, and they are NOT
+    interchangeable:
+
+    - `login_user_id`: the owner's login username, exactly as sent in the
+      `authenticate` request. This is the value `worth`'s Go client
+      (`internal/bank/bank.go`, the only part of this integration with
+      production evidence behind it) sends as `userId` on the ACCOUNTS
+      request, alongside the claim-sourced `customerId`. Proven to work.
+    - `user_id`: the `userId` CLAIM from the authenticate response's JWT,
+      used as `userID` on the TRANSACTIONS request. This is an inference
+      (the spec's claim-sourcing note came from reading a captured request
+      body that only showed `string(len10)`, which never proved the
+      source), not a captured, proven request shape the way the accounts
+      body is. If transactions come back empty against the live bank, this
+      is the first thing to try changing.
+    """
 
     token: str
     customer_id: str
     user_id: str
+    login_user_id: str
 
 
 def _encrypt_password(key: rsa.RSAPublicKey, password: str) -> str:
@@ -503,7 +529,12 @@ class AccessBankProvider(BankProvider):
         claim_user_id = str(claims.get("userId") or "")
         if not claim_user_id:
             raise AccessBankError("authenticate", "schema")
-        return AccessBankSession(token=token, customer_id=customer_id, user_id=claim_user_id)
+        return AccessBankSession(
+            token=token,
+            customer_id=customer_id,
+            user_id=claim_user_id,
+            login_user_id=user_id,
+        )
 
     def _map_accounts(self, rows: Any) -> list[AccountData]:
         if not isinstance(rows, list):
@@ -542,6 +573,26 @@ class AccessBankProvider(BankProvider):
             parsed.append((str(number), str(currency), account_type,
                            _parse_money(row.get("availableBalance"), "accounts")))
 
+        # Owner decision: import only the configured currencies (e.g. the
+        # owner tracks their naira account by hand and does not want it
+        # auto-imported). This MUST run before the ambiguity check below --
+        # filtering first means a currency the owner didn't ask for can
+        # never abort an import of one they did (e.g. two NGN accounts must
+        # not be able to abort a USD-only import). An empty setting means
+        # import everything, preserving the historical default.
+        from app.core.config import get_settings
+
+        allowed_currencies = _parse_currency_allowlist(
+            get_settings().accessbank_import_currencies
+        )
+        if allowed_currencies:
+            before = len(parsed)
+            parsed = [p for p in parsed if p[1].upper() in allowed_currencies]
+            logger.info(
+                "accessbank: import_currencies=%s dropped %d of %d account(s)",
+                sorted(allowed_currencies), before - len(parsed), before,
+            )
+
         # Two accounts in one currency: map neither, rather than guess which
         # holding each belongs to. Name the ambiguous currency(-ies) in the
         # error — currency codes are not sensitive, and naming them is what
@@ -569,7 +620,11 @@ class AccessBankProvider(BankProvider):
                 client,
                 _PATH_ACCOUNTS,
                 # Note the casing: this endpoint takes customerId/userId.
-                {"customerId": session.customer_id, "userId": session.user_id},
+                # userId here is the LOGIN username (session.login_user_id),
+                # NOT the claim -- this is worth's proven request shape
+                # (internal/bank/bank.go), unlike the claim-sourced userID
+                # on the transactions request below. Do not swap these.
+                {"customerId": session.customer_id, "userId": session.login_user_id},
                 "accounts",
                 token=session.token,
             )
@@ -649,6 +704,12 @@ class AccessBankProvider(BankProvider):
                         "pageNumber": str(page),
                         "pageSize": _PAGE_SIZE,
                         "noOfDays": days,
+                        # userID here is the JWT CLAIM (session.user_id), not
+                        # the login username -- unlike the accounts request
+                        # above, this is an INFERENCE (see the
+                        # AccessBankSession docstring), not a proven,
+                        # captured request shape. If live transactions come
+                        # back empty, try session.login_user_id here first.
                         "userID": session.user_id,
                     },
                     "transactions",
@@ -702,7 +763,10 @@ class AccessBankProvider(BankProvider):
             doc = await self._post(
                 client,
                 _PATH_ACCOUNTS,
-                {"customerId": session.customer_id, "userId": session.user_id},
+                # Same shape as get_accounts above: userId is the LOGIN
+                # username (session.login_user_id), proven by worth's Go
+                # client -- not the claim-sourced value transactions uses.
+                {"customerId": session.customer_id, "userId": session.login_user_id},
                 "accounts",
                 token=session.token,
             )
