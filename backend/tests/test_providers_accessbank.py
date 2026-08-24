@@ -10,11 +10,13 @@ import ssl
 from datetime import date
 from decimal import Decimal
 
+import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa as crypto_rsa
 
 from app.providers.accessbank import (
+    _MAX_BODY_BYTES,
     _MAX_DAYS,
     _MAX_PAGES,
     _PAGE_SIZE,
@@ -29,6 +31,7 @@ from app.providers.accessbank import (
     _parse_date,
     _parse_money,
     _decode_public_key,
+    _read_body,
     _raise_for_status,
 )
 from app.providers.base import ProviderRateLimited, ProviderUserActionRequired
@@ -240,3 +243,21 @@ def test_raise_for_status_maps_throttling():
 
 def test_raise_for_status_allows_success():
     assert _raise_for_status(200, "accounts") is None
+
+
+def test_read_body_rejects_an_oversized_body():
+    """A body exceeding _MAX_BODY_BYTES raises AccessBankError with
+    category 'oversize'. A normal body is returned unchanged."""
+    # Build a response with an oversized body
+    oversized = b"x" * (_MAX_BODY_BYTES + 1)
+    response_over = httpx.Response(200, content=oversized)
+
+    with pytest.raises(AccessBankError) as exc:
+        _read_body(response_over, "transactions")
+    assert exc.value.category == "oversize"
+
+    # A normal body passes through unchanged
+    normal_body = b"normal response"
+    response_normal = httpx.Response(200, content=normal_body)
+    result = _read_body(response_normal, "transactions")
+    assert result == normal_body

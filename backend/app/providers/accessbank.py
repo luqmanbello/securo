@@ -38,8 +38,9 @@ _PATH_TRANSACTIONS = "/gateway/api/query-transaction/transaction-history"
 # One whole operation, not one hop.
 ACCESSBANK_HTTP_TIMEOUT = 30.0
 
-# Cap every response read. A bank that starts streaming fails closed rather
-# than exhausting the container.
+# Cap the body that is parsed. All call sites use non-streaming HTTP methods,
+# so the body is buffered by the caller before this check runs. This bounds
+# what is JSON-parsed and handed downstream, not what is downloaded.
 _MAX_BODY_BYTES = 1 << 20
 
 # The bank's own web client sends 20. Match it exactly.
@@ -199,7 +200,12 @@ def _raise_for_status(status: int, stage: str) -> None:
 
 
 def _read_body(response: httpx.Response, stage: str) -> bytes:
-    """Read a capped response body."""
+    """Return the response body, capped for downstream parsing.
+
+    The body is already buffered by the caller (non-streaming HTTP methods),
+    so this bounds what is JSON-parsed and handed downstream, not what is
+    downloaded from the network.
+    """
     body = response.content
     if len(body) > _MAX_BODY_BYTES:
         raise AccessBankError(stage, "oversize")
@@ -215,7 +221,10 @@ def _decode_public_key(doc: Any) -> rsa.RSAPublicKey:
     """
     if not isinstance(doc, dict):
         raise AccessBankError("config", "schema")
-    encoded = (doc.get("env") or {}).get("NEXT_PUBLIC_ENCRYPTION") or ""
+    env = doc.get("env")
+    if not isinstance(env, dict):
+        raise AccessBankError("config", "schema")
+    encoded = env.get("NEXT_PUBLIC_ENCRYPTION") or ""
     if not isinstance(encoded, str) or not encoded.strip():
         raise AccessBankError("config", "schema")
     try:
