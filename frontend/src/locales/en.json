@@ -684,6 +684,24 @@
       "reconnectDescription": "Paste a new setup token to refresh this connection in place. Existing accounts, transactions, categories, and rules are preserved.",
       "reconnect": "Reconnect"
     },
+    "credentialsConnect": {
+      "defaultTitle": "Connect with your credentials",
+      "defaultDescription": "Enter your internet-banking user ID and password to link your accounts.",
+      "userIdLabel": "User ID",
+      "userIdPlaceholder": "Your internet-banking user ID",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Your internet-banking password",
+      "privacyNote": "These are your internet-banking credentials. Securo uses them read-only, to fetch balances and transactions.",
+      "connect": "Connect",
+      "connecting": "Connecting…",
+      "accessbank": {
+        "title": "Connect via Access Bank",
+        "description": "Enter your Access Bank internet-banking user ID and password to link your accounts."
+      },
+      "reconnectTitle": "Reconnect with fresh credentials",
+      "reconnectDescription": "Re-enter your user ID and password to refresh this connection in place. Existing accounts, transactions, categories, and rules are preserved.",
+      "reconnect": "Reconnect"
+    },
     "providers": {
       "pluggy": {
         "description": "Open finance provider for Brazilian banks"
