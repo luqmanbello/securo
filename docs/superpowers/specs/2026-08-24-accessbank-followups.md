@@ -8,19 +8,21 @@ written down so they are not rediscovered from scratch later.
 
 These cannot be closed by reasoning — only by watching the real integration run once.
 
-1. **The transactions `userID` source is an inference.** The accounts request sends the
-   login username, which is evidence-backed: it is `worth`'s proven shape. The
-   transactions request sends the JWT claim's `userId`, which is an inference from a
-   captured request body that showed only a 10-character string, never its source. **If
-   live transactions come back empty, try `session.login_user_id` first** — the comments
-   at `_open_session` and the transactions call site both say so.
+1. **~~The transactions `userID` source is an inference.~~ RESOLVED 2026-08-25 by a live
+   run.** A real connection imported 83 transactions across the full ~90-day window, so
+   the claim-sourced `userID` is accepted by the bank. Note the two values may simply be
+   identical — the login username is 10 characters and the captured claim was also 10 —
+   so this is proof that the current code WORKS, not proof that the claim is what the
+   bank requires. The comments and `session.login_user_id` stay in place as the fallback
+   if a future account behaves differently.
 
-2. **The `accountStatus` vocabulary is unverified.** Only `"ACTIVE"` has ever been
-   observed. The code skips a known-closed set (`CLOSED`, `DORMANT`, `INACTIVE`) with an
+2. **The `accountStatus` vocabulary is still unverified.** Only `"ACTIVE"` has been
+   observed, including on the 2026-08-25 live run. The code skips a known-closed set (`CLOSED`, `DORMANT`, `INACTIVE`) with an
    exact-string comparison rather than filtering on `!= "ACTIVE"`, deliberately: an
    unobserved word must fall through to a loud failure, never a silent drop.
 
-3. **The `accountType` vocabulary is partly unverified.** `SAVINGS` and `CURRENT` map;
+3. **The `accountType` vocabulary is still partly unverified.** Only `SAVINGS` has been
+   seen live (2026-08-25). `SAVINGS` and `CURRENT` map;
    anything else defaults to `savings` with a warning, EXCEPT a type containing `CARD` or
    `LOAN`, which fails closed — defaulting a liability product to savings would report
    debt as a positive asset.
@@ -63,3 +65,19 @@ Each was raised by a review and judged not worth fixing now.
   key ride the same nightly archive. The encryption is still worth having: it defends
   against database-level exposure. The control for the backup threat is enabling
   `k3s secrets-encrypt` on VM 190, which is homelab work, not application work.
+
+## Live verification, 2026-08-25
+
+A real connection against the owner's own account, through the UI:
+
+- The USD account mapped; the naira account was correctly excluded by
+  `ACCESSBANK_IMPORT_CURRENCIES=USD`.
+- 83 transactions imported, 2026-05-25 to 2026-08-24 — the full rolling window.
+- 10 credits, 73 debits, one currency, no negative amounts.
+- **`SUM(credits) - SUM(debits)` equals the bank's own reported balance exactly.** This
+  is the strongest available end-to-end proof: a single amount mangled by a float, or a
+  single transaction type mapped the wrong way, would break the reconciliation.
+- The stored credential is a Fernet token (`gAAAAA...`); the connection row holds only
+  `user_id` and `password_enc`, with no plaintext `password` key.
+- FX is live: the OXR key resolves NGN at the real rate rather than the 1:1 fallback,
+  and the historical endpoint works on this plan, so per-date conversion is real.
