@@ -192,6 +192,40 @@ gives no such option, so the decoder itself must be configured.
 Amounts are then converted to Securo's `Decimal` money fields with no intermediate
 `float()` call anywhere in the path.
 
+### Confirmed values (verified against the USD account, 2026-08-24)
+
+A second live session confirmed the contract against **Dom Savings Classic**, the
+domiciliary account, and paged forward one page. Results:
+
+- The USD account returns an **identical shape** to the naira account. Same fields,
+  same types, same date format. No domiciliary-specific handling is needed.
+- `transactionType` is exactly `"CREDIT"` or `"DEBIT"` — **uppercase**. Both values
+  were observed on one page. This is the complete set as far as observation goes.
+- `transactionDate` is `DD-MMM-YYYY` with an **uppercase** month abbreviation:
+  `09-AUG-2026`, `23-AUG-2026`.
+- `transactionCurrency` was uniform per account (`USD` throughout on the USD
+  account), consistent with it describing the account's own denomination.
+- `transactionCategory` varies: `ATM`, `POS`, `Others` observed. Not used for any
+  money decision, so the set need not be exhaustive.
+- **The bank lists exactly two accounts**, one NGN and one USD. The refuse-to-guess
+  rule therefore will not fire today, but it is retained: a second USD account opened
+  later must not silently start mapping.
+
+Field nullability, counted over one 15-row page:
+
+| Field | Behaviour |
+|---|---|
+| `externalRef` | null on some rows, populated on others — handle both |
+| `banktype`, `beneficiarybank`, `beneficiaryaccount` | null on every observed row |
+| `beneficiary` | never null; **empty string** marks absence |
+| `sender` | never null; empty string on some rows |
+
+So absence is expressed as `null` on some fields and `""` on others. Neither may be
+treated as the other, and `""` must not be read as a meaningful value.
+
+No amount in the sample carried more than two decimal places. That is reassurance,
+not a guarantee, and does not remove the need for `parse_float=Decimal`.
+
 ### Transaction type must map explicitly and fail closed
 
 Securo's balance arithmetic is
@@ -207,18 +241,27 @@ Securo's `"credit"` / `"debit"`, and **an unrecognised value aborts the read**. 
 never defaulted. Defaulting in either direction produces wrong money quietly, which
 is the exact failure class this whole client is built to avoid.
 
-The observed sample had `transactionType` of length 5, consistent with `"Debit"`.
-The full value set must be confirmed against live data during implementation and
-pinned in the mapping table; unknown values fail closed until added deliberately.
+The confirmed mapping is:
+
+    "CREDIT" -> "credit"     # money in
+    "DEBIT"  -> "debit"      # money out
+
+Comparison is on the exact uppercase string. Anything else aborts the read. It is
+never defaulted in either direction.
 
 ### Date format must be pinned, not sniffed
 
-`transactionDate` is 11 characters. A `DD-MMM-YYYY` shape fits, but the format was
-not confirmed during discovery. Implementation must confirm it against live data and
-parse with exactly one pinned format string. Multi-format sniffing is forbidden: a
-date that parses under the wrong format lands a transaction on the wrong day, which
-moves the net-worth trend line, which is the product. Anything that does not match
-the pinned format aborts the read.
+`transactionDate` is `DD-MMM-YYYY` with an uppercase month: `23-AUG-2026`.
+
+It must be parsed with **an explicit month-name table**, not `strptime("%d-%b-%Y")`.
+`%b` resolves against the active locale, so a container with a non-English locale
+would fail to parse — or worse, parse differently — for reasons entirely unrelated to
+the bank. A twelve-entry dict keyed on the uppercase abbreviation is deterministic
+everywhere.
+
+Multi-format sniffing is forbidden. A date that parses under the wrong format lands a
+transaction on the wrong day, which moves the net-worth trend line, which is the
+product. Anything not matching the pinned format aborts the read.
 
 ### History depth is capped by the bank
 
@@ -242,6 +285,18 @@ The response carries no count, page count, or "has more" flag. The loop is there
 "request page N until a page returns fewer than `pageSize` rows", with a hard
 maximum page count. Without that cap, a server that always returns a full page loops
 forever.
+
+**Verified 2026-08-24.** `pageNumber` is honoured server-side: page 1 of the USD
+account returned a full 20 rows and page 2 returned 15, so the short-page terminator
+is real rather than assumed.
+
+`pageSize` stays at **20**, the value the bank's own web client sends. Whether a
+larger page is accepted was deliberately not probed: it would mean sending a
+hand-crafted request the real client never sends, and the only prize is fewer round
+trips. Matching the browser exactly is the safer default for a scraped API.
+
+Note that the credit/debit filter in the bank's UI is applied **client-side** — it
+triggers no request. Only the account, page number and day window reach the server.
 
 ### TLS chain
 
@@ -349,12 +404,10 @@ This barely moves the design — the provider returns every account the bank lis
 Securo links the ones the owner picks, so "only USD" is a linking choice, not a code
 path. Three things do change:
 
-1. **The discovery was performed against the naira account.** The endpoint contract
-   recorded above came from Premier Savings. A domiciliary account can sit on a
-   different product code and is not guaranteed to return the same shape, or to be
-   listed identically by `fetch-customer-account-details`. This must be re-verified
-   against the USD account before implementation. It is the one genuinely unverified
-   assumption in this document.
+1. **~~The discovery was performed against the naira account.~~ Re-verified
+   2026-08-24 against Dom Savings Classic: the USD account returns an identical
+   contract.** No domiciliary-specific handling is required. See "Confirmed values"
+   below.
 2. **FX largely disappears for this account.** With Securo's primary currency set to
    USD and the account denominated in USD, no conversion happens: no rate lookup, no
    frozen rate, no OpenExchangeRates dependency, and none of the 1:1-fallback hazard
@@ -363,18 +416,23 @@ path. Three things do change:
    sharing one currency map nothing — fires only if the bank lists more than one USD
    account. Whether it does is unknown and is part of the re-verification above.
 
-Whether NGN support is needed at all is a separate question from this provider: it
-depends on whether naira holdings are tracked in Securo by hand, not on what the
-importer reads.
+NGN support is a separate question from this provider, and the owner confirmed on
+2026-08-24 that naira holdings **are** still tracked in Securo, entered by hand. So
+the NGN currency work stays on the migration list — it is simply not fed by this
+importer.
 
-## Open items to resolve during implementation
+## Open items
 
-These are decisions already made; what is missing is a live sample to pin them
-against, and each has a defined fail-closed default in the meantime.
+All four items raised by the first draft were resolved in the 2026-08-24
+verification session:
 
-1. **Re-verify the whole contract against the USD account** — see the section above.
-   This is the highest-priority item; the other three can be answered in the same
-   session.
-2. The exact `transactionDate` format string.
-3. The complete set of `transactionType` values.
-4. Whether `pageSize` may exceed 20, which would reduce request count.
+1. ~~Re-verify the contract against the USD account~~ — done; identical.
+2. ~~The exact `transactionDate` format~~ — `DD-MMM-YYYY`, uppercase month.
+3. ~~The complete set of `transactionType` values~~ — `CREDIT` and `DEBIT`.
+4. ~~Whether `pageSize` may exceed 20~~ — deliberately not probed; pinned at 20 to
+   match the bank's own client.
+
+One assumption remains and cannot be closed by observation: the value sets above are
+what a live account produced on one day. They are treated as the complete set, and
+every parser fails closed on anything outside them — which is precisely how a
+surprise becomes a visible error instead of wrong money.
