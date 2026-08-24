@@ -107,6 +107,8 @@ def _parse_money(raw: Any, stage: str) -> Decimal:
     """
     if isinstance(raw, float):
         raise AccessBankError(stage, "float")
+    if isinstance(raw, bool):
+        raise AccessBankError(stage, "schema")
     if raw is None or raw == "":
         raise AccessBankError(stage, "schema")
     if isinstance(raw, Decimal):
@@ -125,10 +127,16 @@ def _parse_money(raw: Any, stage: str) -> Decimal:
     else:
         raise AccessBankError(stage, "schema")
 
-    if value != value.quantize(Decimal("0.01")):
-        # A three-decimal balance means the schema drifted. Abort rather than
-        # round the owner's money on the bank's behalf.
+    if not value.is_finite():
         raise AccessBankError(stage, "schema")
+
+    try:
+        if value != value.quantize(Decimal("0.01")):
+            # A three-decimal balance means the schema drifted. Abort rather than
+            # round the owner's money on the bank's behalf.
+            raise AccessBankError(stage, "schema")
+    except InvalidOperation as exc:
+        raise AccessBankError(stage, "schema") from exc
     return value
 
 

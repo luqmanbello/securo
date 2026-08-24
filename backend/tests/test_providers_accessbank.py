@@ -148,3 +148,21 @@ def test_map_txn_type_fails_closed_on_anything_else():
         with pytest.raises(AccessBankError) as exc:
             _map_txn_type(bad, "transactions")
         assert exc.value.category == "type"
+
+
+def test_parse_money_refuses_a_bool():
+    """In Python, isinstance(True, int) is True, so a bool would silently
+    become Decimal('1') or Decimal('0') without an explicit guard."""
+    for bad in (True, False):
+        with pytest.raises(AccessBankError) as exc:
+            _parse_money(bad, "accounts")
+        assert exc.value.category == "schema"
+
+
+def test_parse_money_refuses_non_finite_and_over_precision_strings():
+    """Infinity, NaN, and over-precision decimals must raise AccessBankError,
+    not bare decimal.InvalidOperation."""
+    for bad in ("Infinity", "-Infinity", "inf", "NaN", "sNaN", "9" * 40 + ".99"):
+        with pytest.raises(AccessBankError) as exc:
+            _parse_money(bad, "accounts")
+        assert exc.value.category == "schema"
