@@ -10,6 +10,7 @@ import json
 import ssl
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -26,6 +27,7 @@ from app.providers.accessbank import (
     _PATH_CONFIG,
     _PATH_TRANSACTIONS,
     AccessBankError,
+    AccessBankProvider,
     _ssl_context,
     _loads,
     _map_txn_type,
@@ -37,7 +39,7 @@ from app.providers.accessbank import (
     _encrypt_password,
     _token_claims,
 )
-from app.providers.base import ProviderRateLimited, ProviderUserActionRequired
+from app.providers.base import ProviderRateLimited, ProviderUserActionRequired, mask_last4
 
 
 def test_only_four_paths_are_declared():
@@ -315,3 +317,153 @@ def test_token_claims_refuses_a_malformed_token():
         with pytest.raises(AccessBankError) as exc:
             _token_claims(bad, "authenticate")
         assert exc.value.category == "schema"
+
+
+def _install_transport(handler):
+    """Replace AccessBankProvider._client with one wired to a MockTransport.
+
+    `base_url` must be set here. The provider posts relative paths, so a
+    client without a base URL raises "Invalid URL: No scheme included"
+    before the transport is ever consulted.
+    """
+    transport = httpx.MockTransport(handler)
+
+    def _fake_client(self):
+        return httpx.AsyncClient(
+            transport=transport,
+            base_url="https://ibank.accessbankplc.com",
+            timeout=30,
+        )
+
+    return patch.object(AccessBankProvider, "_client", _fake_client)
+
+
+def _bank(accounts: list[dict], private_key, calls: list | None = None):
+    """A fake Access Bank serving config, auth and accounts."""
+    doc = _config_doc(private_key.public_key())
+    token = _jwt({"customerId": "123456789", "userId": "theuserid"})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if calls is not None:
+            calls.append(request.url.path)
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=doc)
+        if request.url.path == _PATH_AUTHENTICATE:
+            return httpx.Response(200, json={"data": {"idToken": token}})
+        if request.url.path == _PATH_ACCOUNTS:
+            return httpx.Response(200, json={"data": accounts})
+        return httpx.Response(404)
+
+    return handler
+
+
+_CREDS = {"user_id": "theuserid", "password": "hunter2"}
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_maps_balances():
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "0123456789", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "NGN",
+         "availableBalance": "1500000.00"},
+        {"accountNumber": "9876543210", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "2350.10"},
+    ]
+    with _install_transport(_bank(accounts, key)):
+        result = await AccessBankProvider().get_accounts(_CREDS)
+
+    assert len(result) == 2
+    usd = next(a for a in result if a.currency == "USD")
+    assert usd.balance == Decimal("2350.10")
+    assert isinstance(usd.balance, Decimal)
+    assert usd.masked_number == mask_last4("9876543210")
+    # external_id carries the FULL account number, by necessity: the
+    # transactions endpoint takes `accountNo`, and get_transactions receives
+    # only this value. worth could mask everywhere because it never called
+    # back per account; Securo does. `masked_number` is what display uses.
+    assert usd.external_id == "9876543210"
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_refuses_two_accounts_in_one_currency():
+    """Guessing which of two same-currency accounts is which is worse than
+    refusing. Ported from worth."""
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "0000000001", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "1.00"},
+        {"accountNumber": "0000000002", "accountType": "CURRENT",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "2.00"},
+    ]
+    with _install_transport(_bank(accounts, key)):
+        with pytest.raises(AccessBankError) as exc:
+            await AccessBankProvider().get_accounts(_CREDS)
+    assert exc.value.category == "ambiguous"
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_aborts_on_a_three_decimal_balance():
+    key = _make_key(2048)
+    accounts = [{"accountNumber": "0000000001", "accountType": "SAVINGS",
+                 "accountStatus": "ACTIVE", "accountCurrency": "USD",
+                 "availableBalance": "1.005"}]
+    with _install_transport(_bank(accounts, key)):
+        with pytest.raises(AccessBankError):
+            await AccessBankProvider().get_accounts(_CREDS)
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_aborts_on_a_missing_field():
+    key = _make_key(2048)
+    accounts = [{"accountNumber": "0000000001", "accountCurrency": "USD"}]
+    with _install_transport(_bank(accounts, key)):
+        with pytest.raises(AccessBankError):
+            await AccessBankProvider().get_accounts(_CREDS)
+
+
+@pytest.mark.asyncio
+async def test_rejected_credential_is_not_retried():
+    key = _make_key(2048)
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=_config_doc(key.public_key()))
+        return httpx.Response(401, json={"message": "bad credentials"})
+
+    with _install_transport(handler):
+        with pytest.raises(ProviderUserActionRequired):
+            await AccessBankProvider().get_accounts(_CREDS)
+
+    assert calls.count(_PATH_AUTHENTICATE) == 1
+
+
+@pytest.mark.asyncio
+async def test_errors_never_leak_the_password_or_a_response_body():
+    key = _make_key(2048)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=_config_doc(key.public_key()))
+        return httpx.Response(500, text="SECRET BODY hunter2")
+
+    with _install_transport(handler):
+        with pytest.raises(AccessBankError) as exc:
+            await AccessBankProvider().get_accounts(_CREDS)
+
+    message = str(exc.value)
+    assert "hunter2" not in message
+    assert "SECRET BODY" not in message
+
+
+def test_oauth_methods_are_refused():
+    provider = AccessBankProvider()
+    assert provider.name == "accessbank"
+    assert provider.flow_type == "credentials"
+    with pytest.raises(NotImplementedError):
+        provider.get_oauth_url("uri", "state")

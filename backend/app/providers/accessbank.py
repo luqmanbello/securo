@@ -19,16 +19,25 @@ import base64
 import httpx
 import json
 import ssl
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from app.providers.base import ProviderRateLimited, ProviderUserActionRequired
+from app.providers.base import (
+    AccountData,
+    BankProvider,
+    ConnectionData,
+    ProviderRateLimited,
+    ProviderUserActionRequired,
+    TransactionData,
+    mask_last4,
+)
 
 # The complete set of paths this module may ever request.
 _PATH_CONFIG = "/api/config/"
@@ -291,3 +300,158 @@ def _token_claims(token: Any, stage: str) -> dict:
     if not isinstance(claims, dict):
         raise AccessBankError(stage, "schema")
     return claims
+
+
+class AccessBankProvider(BankProvider):
+    """Read-only Access Bank reader.
+
+    Access Bank authenticates with an RSA-encrypted username and password
+    rather than OAuth, so this follows the pattern SimpleFIN established for
+    non-redirect providers: the OAuth-only methods raise, and
+    `handle_oauth_callback` is repurposed as the credential-claim step.
+    """
+
+    @property
+    def name(self) -> str:
+        return "accessbank"
+
+    @property
+    def flow_type(self) -> str:
+        return "credentials"
+
+    def get_oauth_url(self, *args, **kwargs):  # type: ignore[override]
+        raise NotImplementedError(
+            "Access Bank uses an internet-banking username and password, not OAuth"
+        )
+
+    def _client(self) -> httpx.AsyncClient:
+        from app.core.config import get_settings
+
+        return httpx.AsyncClient(
+            base_url=get_settings().accessbank_base_url,
+            timeout=ACCESSBANK_HTTP_TIMEOUT,
+            verify=_ssl_context(),
+        )
+
+    async def _post(
+        self,
+        client: httpx.AsyncClient,
+        path: str,
+        payload: dict,
+        stage: str,
+        token: Optional[str] = None,
+    ) -> Any:
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        try:
+            response = await client.post(path, json=payload, headers=headers)
+        except httpx.HTTPError as exc:
+            raise AccessBankError(stage, "network") from exc
+        _raise_for_status(response.status_code, stage)
+        return _loads(_read_body(response, stage), stage)
+
+    async def _open_session(
+        self, client: httpx.AsyncClient, credentials: dict
+    ) -> AccessBankSession:
+        """One config read and one authentication. Never retried."""
+        user_id = credentials.get("user_id") or ""
+        password = credentials.get("password") or ""
+        if not user_id or not password:
+            raise ProviderUserActionRequired(
+                "Access Bank credentials are missing. Re-enter them to reconnect.",
+                code="accessbank_credential_missing",
+            )
+        try:
+            response = await client.get(_PATH_CONFIG, headers={"Accept": "application/json"})
+        except httpx.HTTPError as exc:
+            raise AccessBankError("config", "network") from exc
+        _raise_for_status(response.status_code, "config")
+        key = _decode_public_key(_loads(_read_body(response, "config"), "config"))
+
+        doc = await self._post(
+            client,
+            _PATH_AUTHENTICATE,
+            {"userId": user_id, "password": _encrypt_password(key, password)},
+            "authenticate",
+        )
+        token = ((doc or {}).get("data") or {}).get("idToken") or ""
+        if not token:
+            # A 200 with no token is either drifted schema or a rejected
+            # credential. Both are terminal; neither is retried.
+            raise AccessBankError("authenticate", "schema")
+        claims = _token_claims(token, "authenticate")
+        customer_id = claims.get("customerId") or ""
+        if not customer_id:
+            raise AccessBankError("authenticate", "schema")
+        return AccessBankSession(token=token, customer_id=customer_id, user_id=user_id)
+
+    def _map_accounts(self, rows: Any) -> list[AccountData]:
+        if not isinstance(rows, list):
+            raise AccessBankError("accounts", "schema")
+
+        parsed = []
+        for row in rows:
+            if not isinstance(row, dict):
+                raise AccessBankError("accounts", "schema")
+            number = row.get("accountNumber")
+            currency = row.get("accountCurrency")
+            acct_type = row.get("accountType")
+            if not number or not currency or not acct_type:
+                raise AccessBankError("accounts", "schema")
+            parsed.append((str(number), str(currency), str(acct_type),
+                           _parse_money(row.get("availableBalance"), "accounts")))
+
+        # Two accounts in one currency: map neither, rather than guess which
+        # holding each belongs to.
+        duplicates = [c for c, n in Counter(c for _, c, _, _ in parsed).items() if n > 1]
+        if duplicates:
+            raise AccessBankError("accounts", "ambiguous")
+
+        return [
+            AccountData(
+                external_id=number,
+                name=f"Access Bank {currency}",
+                type="savings",
+                balance=balance,
+                currency=currency,
+                masked_number=mask_last4(number),
+            )
+            for number, currency, _acct_type, balance in parsed
+        ]
+
+    async def get_accounts(self, credentials: dict) -> list[AccountData]:
+        async with self._client() as client:
+            session = await self._open_session(client, credentials)
+            doc = await self._post(
+                client,
+                _PATH_ACCOUNTS,
+                # Note the casing: this endpoint takes customerId/userId.
+                {"customerId": session.customer_id, "userId": session.user_id},
+                "accounts",
+                token=session.token,
+            )
+            return self._map_accounts((doc or {}).get("data"))
+
+    # --- Temporary stubs -------------------------------------------------
+    # BankProvider is an ABC; these three methods are abstract on it, so
+    # AccessBankProvider cannot be instantiated at all — not even for
+    # get_accounts — until every abstract method has *some* override. Task 6
+    # replaces get_transactions; Task 7 replaces handle_oauth_callback and
+    # refresh_credentials. Signatures match the ABC exactly so those tasks
+    # can drop a real implementation in without touching this stub's shape.
+
+    async def get_transactions(
+        self,
+        credentials: dict,
+        account_external_id: str,
+        since: Optional[date] = None,
+        payee_source: str = "auto",
+    ) -> list[TransactionData]:
+        raise NotImplementedError  # replaced by Task 6
+
+    async def handle_oauth_callback(self, code: str) -> ConnectionData:
+        raise NotImplementedError  # replaced by Task 7
+
+    async def refresh_credentials(self, credentials: dict) -> dict:
+        raise NotImplementedError  # replaced by Task 7
