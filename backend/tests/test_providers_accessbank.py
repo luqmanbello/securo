@@ -467,3 +467,78 @@ def test_oauth_methods_are_refused():
     assert provider.flow_type == "credentials"
     with pytest.raises(NotImplementedError):
         provider.get_oauth_url("uri", "state")
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_maps_known_account_types():
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "0123456789", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "NGN",
+         "availableBalance": "100.00"},
+        {"accountNumber": "9876543210", "accountType": "CURRENT",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "200.00"},
+    ]
+    with _install_transport(_bank(accounts, key)):
+        result = await AccessBankProvider().get_accounts(_CREDS)
+
+    savings = next(a for a in result if a.currency == "NGN")
+    current = next(a for a in result if a.currency == "USD")
+    assert savings.type == "savings"
+    assert current.type == "checking"
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_defaults_an_unknown_account_type_without_raising():
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "0000000001", "accountType": "DOMICILIARY",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "1.00"},
+    ]
+    with _install_transport(_bank(accounts, key)):
+        result = await AccessBankProvider().get_accounts(_CREDS)
+
+    assert len(result) == 1
+    assert result[0].type == "savings"
+    assert result[0].type != "credit_card"
+
+
+@pytest.mark.asyncio
+async def test_open_session_rejects_a_non_dict_response():
+    """A top-level JSON array from `authenticate` must raise AccessBankError,
+    not AttributeError, from indexing a non-dict."""
+    key = _make_key(2048)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=_config_doc(key.public_key()))
+        if request.url.path == _PATH_AUTHENTICATE:
+            return httpx.Response(200, json=[1, 2, 3])
+        return httpx.Response(404)
+
+    with _install_transport(handler):
+        with pytest.raises(AccessBankError):
+            await AccessBankProvider().get_accounts(_CREDS)
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_rejects_a_non_dict_response():
+    """A top-level JSON array from the accounts endpoint must raise
+    AccessBankError, not AttributeError, from indexing a non-dict."""
+    key = _make_key(2048)
+    token = _jwt({"customerId": "123456789", "userId": "theuserid"})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=_config_doc(key.public_key()))
+        if request.url.path == _PATH_AUTHENTICATE:
+            return httpx.Response(200, json={"data": {"idToken": token}})
+        if request.url.path == _PATH_ACCOUNTS:
+            return httpx.Response(200, json=[])
+        return httpx.Response(404)
+
+    with _install_transport(handler):
+        with pytest.raises(AccessBankError):
+            await AccessBankProvider().get_accounts(_CREDS)

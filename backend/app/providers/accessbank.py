@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import httpx
 import json
+import logging
 import ssl
 from collections import Counter
 from dataclasses import dataclass
@@ -66,6 +67,8 @@ _MAX_DAYS = 90
 
 _CERT_PATH = Path(__file__).with_name("certum-dv-tls-g2-r39.pem")
 
+logger = logging.getLogger(__name__)
+
 
 class AccessBankError(RuntimeError):
     """A failure at one stage of the read.
@@ -102,6 +105,20 @@ _MONTHS = {
 # The bank sends uppercase. Compare exactly; do not normalise case, because a
 # changed casing is a changed contract and should be reviewed, not absorbed.
 _TXN_TYPES = {"CREDIT": "credit", "DEBIT": "debit"}
+
+# The bank sends uppercase. Compare exactly, same as _TXN_TYPES.
+#
+# Unlike every other fail-closed rule in this module, an unrecognised value
+# here is NOT terminal. Every other check (the amount, the date, the
+# direction) protects money correctness. Account type does not affect money
+# in Securo except for "credit_card", which flips the balance sign in
+# `_account_balance_at` — so an account type must never default to
+# "credit_card". Aborting an entire balance read because the bank labelled
+# an account "DOMICILIARY" would be a worse trade than a defaulted display
+# label, so `_map_accounts` defaults to "savings" and logs a warning instead
+# of raising. Do not "tighten" this into a fail-closed check without
+# re-reading this comment.
+_ACCOUNT_TYPES = {"SAVINGS": "savings", "CURRENT": "checking"}
 
 
 def _loads(body: bytes | str, stage: str) -> Any:
@@ -220,6 +237,25 @@ def _read_body(response: httpx.Response, stage: str) -> bytes:
     if len(body) > _MAX_BODY_BYTES:
         raise AccessBankError(stage, "oversize")
     return body
+
+
+def _as_dict(value: Any, stage: str) -> dict:
+    """Treat a missing field as empty; never index a non-dict.
+
+    A field the bank omits is normal and yields an empty dict, so the caller
+    can `.get()` its way through a chain of optional keys. A field the bank
+    sends but that is not an object (a top-level list, string or number,
+    e.g. the whole response body being `[]`) means the schema drifted from
+    what this module expects, and must raise AccessBankError here rather
+    than an uncaught AttributeError from the next `.get()` down the chain.
+    Same defensive style as `_decode_public_key`'s `isinstance(env, dict)`
+    check.
+    """
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise AccessBankError(stage, "schema")
+    return value
 
 
 def _decode_public_key(doc: Any) -> rsa.RSAPublicKey:
@@ -375,7 +411,8 @@ class AccessBankProvider(BankProvider):
             {"userId": user_id, "password": _encrypt_password(key, password)},
             "authenticate",
         )
-        token = ((doc or {}).get("data") or {}).get("idToken") or ""
+        data = _as_dict(_as_dict(doc, "authenticate").get("data"), "authenticate")
+        token = data.get("idToken") or ""
         if not token:
             # A 200 with no token is either drifted schema or a rejected
             # credential. Both are terminal; neither is retried.
@@ -399,7 +436,16 @@ class AccessBankProvider(BankProvider):
             acct_type = row.get("accountType")
             if not number or not currency or not acct_type:
                 raise AccessBankError("accounts", "schema")
-            parsed.append((str(number), str(currency), str(acct_type),
+            account_type = _ACCOUNT_TYPES.get(str(acct_type))
+            if account_type is None:
+                # See the comment on _ACCOUNT_TYPES: defaulted, not raised,
+                # and never "credit_card".
+                logger.warning(
+                    "accessbank: unmapped account type %r; defaulting to savings",
+                    acct_type,
+                )
+                account_type = "savings"
+            parsed.append((str(number), str(currency), account_type,
                            _parse_money(row.get("availableBalance"), "accounts")))
 
         # Two accounts in one currency: map neither, rather than guess which
@@ -412,12 +458,12 @@ class AccessBankProvider(BankProvider):
             AccountData(
                 external_id=number,
                 name=f"Access Bank {currency}",
-                type="savings",
+                type=account_type,
                 balance=balance,
                 currency=currency,
                 masked_number=mask_last4(number),
             )
-            for number, currency, _acct_type, balance in parsed
+            for number, currency, account_type, balance in parsed
         ]
 
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
@@ -431,7 +477,7 @@ class AccessBankProvider(BankProvider):
                 "accounts",
                 token=session.token,
             )
-            return self._map_accounts((doc or {}).get("data"))
+            return self._map_accounts(_as_dict(doc, "accounts").get("data"))
 
     # --- Temporary stubs -------------------------------------------------
     # BankProvider is an ABC; these three methods are abstract on it, so
