@@ -6,6 +6,8 @@ it. All HTTP is served by httpx.MockTransport. No test contacts the real bank.
 from __future__ import annotations
 
 import ssl
+from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -19,6 +21,10 @@ from app.providers.accessbank import (
     _PATH_TRANSACTIONS,
     AccessBankError,
     _ssl_context,
+    _loads,
+    _map_txn_type,
+    _parse_date,
+    _parse_money,
 )
 
 
@@ -59,3 +65,86 @@ def test_ssl_context_verifies_and_loads_the_pinned_chain():
 def test_error_message_never_leaks_detail():
     err = AccessBankError("authenticate", "rejected")
     assert str(err) == "accessbank: authenticate failed (rejected)"
+
+
+def test_loads_decodes_json_numbers_as_decimal():
+    """The single most important line in this module. Transaction amounts
+    arrive as bare JSON numbers; the default decoder makes them floats."""
+    parsed = _loads(b'{"transactionAmount": 2350.10}', "transactions")
+    amount = parsed["transactionAmount"]
+    assert isinstance(amount, Decimal)
+    assert amount == Decimal("2350.10")
+
+
+def test_loads_rejects_malformed_json():
+    with pytest.raises(AccessBankError) as exc:
+        _loads(b"not json", "transactions")
+    assert exc.value.category == "schema"
+
+
+def test_parse_money_accepts_a_decimal_string():
+    assert _parse_money("1234.56", "accounts") == Decimal("1234.56")
+
+
+def test_parse_money_accepts_a_decimal_from_the_decoder():
+    assert _parse_money(Decimal("2350.10"), "transactions") == Decimal("2350.10")
+
+
+def test_parse_money_accepts_an_integer():
+    assert _parse_money(1000, "accounts") == Decimal("1000")
+
+
+def test_parse_money_refuses_a_float():
+    """A float here means _loads was not used. Fail loudly rather than
+    silently rounding the owner's money."""
+    with pytest.raises(AccessBankError) as exc:
+        _parse_money(2350.10, "transactions")
+    assert exc.value.category == "float"
+
+
+def test_parse_money_refuses_more_than_two_decimals():
+    with pytest.raises(AccessBankError):
+        _parse_money("1.005", "accounts")
+
+
+def test_parse_money_refuses_scientific_notation():
+    with pytest.raises(AccessBankError):
+        _parse_money("1e3", "accounts")
+
+
+def test_parse_money_refuses_none_and_empty():
+    for bad in (None, ""):
+        with pytest.raises(AccessBankError):
+            _parse_money(bad, "accounts")
+
+
+def test_parse_date_reads_the_banks_uppercase_format():
+    assert _parse_date("23-AUG-2026", "transactions") == date(2026, 8, 23)
+    assert _parse_date("09-AUG-2026", "transactions") == date(2026, 8, 9)
+
+
+def test_parse_date_handles_every_month():
+    months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+              "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+    for i, mon in enumerate(months, start=1):
+        assert _parse_date(f"01-{mon}-2026", "transactions") == date(2026, i, 1)
+
+
+def test_parse_date_refuses_any_other_shape():
+    for bad in ("2026-08-23", "23/08/2026", "23-AUGUST-2026", "", None, "23-XXX-2026"):
+        with pytest.raises(AccessBankError):
+            _parse_date(bad, "transactions")
+
+
+def test_map_txn_type_maps_the_two_known_values():
+    assert _map_txn_type("CREDIT", "transactions") == "credit"
+    assert _map_txn_type("DEBIT", "transactions") == "debit"
+
+
+def test_map_txn_type_fails_closed_on_anything_else():
+    """Securo subtracts anything whose type is not exactly 'credit', with no
+    validation. Defaulting in either direction is silently wrong money."""
+    for bad in ("Credit", "credit", "TRANSFER", "", None, "REVERSAL"):
+        with pytest.raises(AccessBankError) as exc:
+            _map_txn_type(bad, "transactions")
+        assert exc.value.category == "type"

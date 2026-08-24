@@ -15,8 +15,12 @@ operation. Errors carry a stage and a category, never a response body.
 """
 from __future__ import annotations
 
+import json
 import ssl
+from datetime import date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Any
 
 # The complete set of paths this module may ever request.
 _PATH_CONFIG = "/api/config/"
@@ -67,3 +71,95 @@ def _ssl_context() -> ssl.SSLContext:
     ctx = ssl.create_default_context()
     ctx.load_verify_locations(cafile=str(_CERT_PATH))
     return ctx
+
+
+# Explicit month table. `strptime("%b")` resolves against the active locale,
+# so a container with a non-English locale would fail — or worse, parse
+# differently — for reasons unrelated to the bank.
+_MONTHS = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+# The bank sends uppercase. Compare exactly; do not normalise case, because a
+# changed casing is a changed contract and should be reviewed, not absorbed.
+_TXN_TYPES = {"CREDIT": "credit", "DEBIT": "debit"}
+
+
+def _loads(body: bytes | str, stage: str) -> Any:
+    """Decode a bank response with money-safe number handling.
+
+    `parse_float=Decimal` is the reason this helper exists. Transaction
+    amounts arrive as bare JSON numbers, and the default decoder turns those
+    into binary floats, which silently rounds money.
+    """
+    try:
+        return json.loads(body, parse_float=Decimal)
+    except (ValueError, TypeError) as exc:
+        raise AccessBankError(stage, "schema") from exc
+
+
+def _parse_money(raw: Any, stage: str) -> Decimal:
+    """Exact money, or an error. Never an approximation.
+
+    A `float` argument means the caller did not use `_loads`; that is a bug in
+    this module and is raised rather than tolerated.
+    """
+    if isinstance(raw, float):
+        raise AccessBankError(stage, "float")
+    if raw is None or raw == "":
+        raise AccessBankError(stage, "schema")
+    if isinstance(raw, Decimal):
+        value = raw
+    elif isinstance(raw, int):
+        value = Decimal(raw)
+    elif isinstance(raw, str):
+        text = raw.strip()
+        # Scientific notation and anything non-numeric are refused outright.
+        if not text or any(c in text for c in "eE"):
+            raise AccessBankError(stage, "schema")
+        try:
+            value = Decimal(text)
+        except InvalidOperation as exc:
+            raise AccessBankError(stage, "schema") from exc
+    else:
+        raise AccessBankError(stage, "schema")
+
+    if value != value.quantize(Decimal("0.01")):
+        # A three-decimal balance means the schema drifted. Abort rather than
+        # round the owner's money on the bank's behalf.
+        raise AccessBankError(stage, "schema")
+    return value
+
+
+def _parse_date(raw: Any, stage: str) -> date:
+    """Parse the bank's `DD-MMM-YYYY` with an uppercase month.
+
+    Exactly one format is accepted. A date that parses under the wrong format
+    lands a transaction on the wrong day, which moves the net-worth trend
+    line, which is the product.
+    """
+    if not isinstance(raw, str):
+        raise AccessBankError(stage, "date")
+    parts = raw.strip().split("-")
+    if len(parts) != 3:
+        raise AccessBankError(stage, "date")
+    day, mon, year = parts
+    if len(day) != 2 or len(year) != 4 or mon not in _MONTHS:
+        raise AccessBankError(stage, "date")
+    try:
+        return date(int(year), _MONTHS[mon], int(day))
+    except ValueError as exc:
+        raise AccessBankError(stage, "date") from exc
+
+
+def _map_txn_type(raw: Any, stage: str) -> str:
+    """Map the bank's CREDIT/DEBIT onto Securo's credit/debit.
+
+    Fails closed. Securo's balance arithmetic treats anything that is not
+    exactly "credit" as money out, and validates nothing, so an unrecognised
+    value must stop the read rather than pick a direction.
+    """
+    if not isinstance(raw, str) or raw not in _TXN_TYPES:
+        raise AccessBankError(stage, "type")
+    return _TXN_TYPES[raw]
