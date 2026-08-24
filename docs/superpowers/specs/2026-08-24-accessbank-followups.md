@@ -48,11 +48,10 @@ Each was raised by a review and judged not worth fixing now.
 
 ## Larger follow-ups
 
-- **The connect UI does not exist.** `flow_type: "credentials"` is a value Securo's
-  frontend has never handled, so Access Bank appears clickable in the connector picker
-  and does nothing, and `handleReconnectClick` falls through into the Pluggy widget
-  branch. Connecting currently requires POSTing the credential blob to the connections
-  callback endpoint. This was scoped out deliberately; it needs its own plan.
+- **~~The connect UI does not exist.~~ BUILT 2026-08-25** on branch
+  `feat/accessbank-connect-ui`. `credentials-connect-dialog.tsx` handles the
+  `flow_type: "credentials"` case, and `handleReconnectClick` no longer falls through
+  into the Pluggy widget branch. Verified live through the browser.
 
 - **A currency filter set after an account is already imported freezes that account
   rather than removing it.** `connection_service` skips accounts the provider omits, so
