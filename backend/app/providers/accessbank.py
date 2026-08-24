@@ -15,12 +15,19 @@ operation. Errors carry a stage and a category, never a response body.
 """
 from __future__ import annotations
 
+import base64
+import httpx
 import json
 import ssl
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+from app.providers.base import ProviderRateLimited, ProviderUserActionRequired
 
 # The complete set of paths this module may ever request.
 _PATH_CONFIG = "/api/config/"
@@ -171,3 +178,58 @@ def _map_txn_type(raw: Any, stage: str) -> str:
     if not isinstance(raw, str) or raw not in _TXN_TYPES:
         raise AccessBankError(stage, "type")
     return _TXN_TYPES[raw]
+
+
+def _raise_for_status(status: int, stage: str) -> None:
+    """Map a bank status onto Securo's provider exceptions.
+
+    401, 403 and 429 are terminal and are never retried: retrying a stored
+    bank credential is how a wrong password walks into an account lockout.
+    """
+    if status in (401, 403):
+        raise ProviderUserActionRequired(
+            "Access Bank rejected the stored credential. Re-enter it to reconnect.",
+            code="accessbank_credential_rejected",
+        )
+    if status == 429:
+        raise ProviderRateLimited("Access Bank is rate-limiting requests. Try again later.")
+    if status >= 400:
+        raise AccessBankError(stage, "http")
+    return None
+
+
+def _read_body(response: httpx.Response, stage: str) -> bytes:
+    """Read a capped response body."""
+    body = response.content
+    if len(body) > _MAX_BODY_BYTES:
+        raise AccessBankError(stage, "oversize")
+    return body
+
+
+def _decode_public_key(doc: Any) -> rsa.RSAPublicKey:
+    """Read the RSA key the login form encrypts against.
+
+    Every failure here is fatal rather than recoverable: without a key that
+    the bank published and that is strong enough to matter, there is nothing
+    safe to encrypt the password to.
+    """
+    if not isinstance(doc, dict):
+        raise AccessBankError("config", "schema")
+    encoded = (doc.get("env") or {}).get("NEXT_PUBLIC_ENCRYPTION") or ""
+    if not isinstance(encoded, str) or not encoded.strip():
+        raise AccessBankError("config", "schema")
+    try:
+        der = base64.b64decode(encoded.strip(), validate=True)
+    except (ValueError, TypeError) as exc:
+        raise AccessBankError("config", "key") from exc
+    try:
+        key = serialization.load_der_public_key(der)
+    except Exception as exc:  # cryptography raises several unrelated types
+        raise AccessBankError("config", "key") from exc
+    if not isinstance(key, rsa.RSAPublicKey):
+        raise AccessBankError("config", "key")
+    if key.key_size < 2048:
+        # An undersized modulus means the document was swapped for a weak
+        # key; refuse rather than encrypt the password to it.
+        raise AccessBankError("config", "key")
+    return key
