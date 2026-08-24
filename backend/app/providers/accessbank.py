@@ -30,6 +30,7 @@ from typing import Any, Optional
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
+from app.agents.services.crypto import decrypt, encrypt
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -392,11 +393,21 @@ class AccessBankProvider(BankProvider):
     ) -> AccessBankSession:
         """One config read and one authentication. Never retried."""
         user_id = credentials.get("user_id") or ""
-        password = credentials.get("password") or ""
-        if not user_id or not password:
+        password_enc = credentials.get("password_enc") or ""
+        if not user_id or not password_enc:
             raise ProviderUserActionRequired(
                 "Access Bank credentials are missing. Re-enter them to reconnect.",
                 code="accessbank_credential_missing",
+            )
+        password = decrypt(password_enc)
+        if not password:
+            # Present but unreadable (e.g. a rotated SECRET_KEY) is NOT the
+            # same as missing: silently treating it as "not configured"
+            # would disable the importer without telling the owner why.
+            raise ProviderUserActionRequired(
+                "The stored Access Bank credential could not be read. "
+                "Re-enter it to reconnect.",
+                code="accessbank_credential_unreadable",
             )
         try:
             response = await client.get(_PATH_CONFIG, headers={"Accept": "application/json"})
@@ -574,7 +585,14 @@ class AccessBankProvider(BankProvider):
         return {"user_id": user_id, "password": password}
 
     async def handle_oauth_callback(self, code: str) -> ConnectionData:
-        credentials = self._decode_claim_payload(code)
+        plaintext = self._decode_claim_payload(code)
+        password_enc = encrypt(plaintext["password"])
+        if not password_enc:
+            # _decode_claim_payload already guarantees a non-empty password,
+            # so a None here means encrypt() itself is broken, not that the
+            # credential was absent. Never fall back to storing plaintext.
+            raise AccessBankError("connect", "crypto")
+        credentials = {"user_id": plaintext["user_id"], "password_enc": password_enc}
         async with self._client() as client:
             session = await self._open_session(client, credentials)
             doc = await self._post(

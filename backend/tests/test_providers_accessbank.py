@@ -14,8 +14,11 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa as crypto_rsa
+
+from app.agents.services.crypto import decrypt, encrypt
 
 from app.providers.accessbank import (
     _MAX_BODY_BYTES,
@@ -357,7 +360,7 @@ def _bank(accounts: list[dict], private_key, calls: list | None = None):
     return handler
 
 
-_CREDS = {"user_id": "theuserid", "password": "hunter2"}
+_CREDS = {"user_id": "theuserid", "password_enc": encrypt("hunter2")}
 
 
 @pytest.mark.asyncio
@@ -764,7 +767,9 @@ async def test_handle_oauth_callback_claims_credentials_and_returns_accounts():
 
     assert connection.institution_name == "Access Bank"
     assert connection.external_id == "123456789"
-    assert connection.credentials == {"user_id": "theuserid", "password": "hunter2"}
+    assert set(connection.credentials) == {"user_id", "password_enc"}
+    assert connection.credentials["user_id"] == "theuserid"
+    assert decrypt(connection.credentials["password_enc"]) == "hunter2"
     assert len(connection.accounts) == 1
     assert connection.accounts[0].currency == "USD"
 
@@ -801,17 +806,71 @@ async def test_handle_oauth_callback_rejects_a_non_dict_response():
 
 @pytest.mark.asyncio
 async def test_unreadable_stored_credential_asks_for_re_entry():
-    """Upstream's decrypt() returns None on a rotated SECRET_KEY, which would
-    otherwise present as 'not configured' and silently do nothing."""
+    """A missing password_enc must ask for re-entry rather than silently
+    doing nothing. See test_undecryptable_credential_asks_for_re_entry below
+    for the present-but-undecryptable-ciphertext case (a rotated SECRET_KEY)."""
     with pytest.raises(ProviderUserActionRequired) as exc:
-        await AccessBankProvider().get_accounts({"user_id": "x", "password": None})
+        await AccessBankProvider().get_accounts({"user_id": "x", "password_enc": None})
     assert "re-enter" in str(exc.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_undecryptable_credential_asks_for_re_entry():
+    """A password_enc that is syntactically valid but was encrypted under a
+    different key (e.g. after a SECRET_KEY rotation) must ask the user to
+    re-enter it -- not be silently treated as an absent credential. This is
+    the design's rotated-SECRET_KEY case, spec test case 12."""
+    foreign_ciphertext = Fernet(Fernet.generate_key()).encrypt(b"hunter2").decode("ascii")
+    with pytest.raises(ProviderUserActionRequired) as exc:
+        await AccessBankProvider().get_accounts(
+            {"user_id": "theuserid", "password_enc": foreign_ciphertext}
+        )
+    message = str(exc.value).lower()
+    assert "re-enter" in message
+    assert "missing" not in message
+
+
+@pytest.mark.asyncio
+async def test_credentials_round_trip_through_encryption():
+    """Encrypt and decrypt actually pair up: the credentials returned from
+    the claim step must work when handed straight to get_accounts."""
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "9876543210", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "2350.10"},
+    ]
+    code = json.dumps({"user_id": "theuserid", "password": "hunter2"})
+    with _install_transport(_bank(accounts, key)):
+        connection = await AccessBankProvider().handle_oauth_callback(code)
+        result = await AccessBankProvider().get_accounts(connection.credentials)
+
+    assert len(result) == 1
+    assert result[0].currency == "USD"
+
+
+@pytest.mark.asyncio
+async def test_stored_password_is_not_plaintext():
+    """The literal password must not appear anywhere in the stored
+    credentials -- only its ciphertext."""
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "9876543210", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "2350.10"},
+    ]
+    code = json.dumps({"user_id": "theuserid", "password": "hunter2"})
+    with _install_transport(_bank(accounts, key)):
+        connection = await AccessBankProvider().handle_oauth_callback(code)
+
+    for value in connection.credentials.values():
+        assert "hunter2" not in str(value)
 
 
 @pytest.mark.asyncio
 async def test_refresh_credentials_is_a_no_op():
     """There is no refresh token — every operation re-authenticates."""
-    creds = {"user_id": "theuserid", "password": "hunter2"}
+    creds = {"user_id": "theuserid", "password_enc": encrypt("hunter2")}
     assert await AccessBankProvider().refresh_credentials(creds) == creds
 
 
