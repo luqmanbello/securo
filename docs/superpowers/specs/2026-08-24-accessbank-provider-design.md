@@ -126,9 +126,19 @@ Confirmed still live and unchanged on 2026-08-24.
 Per-account fields consumed: `accountNumber`, `accountType`, `accountStatus`,
 `accountCurrency`, `availableBalance`.
 
-Mapped to `AccountData`. Account numbers are masked at parse time via the existing
-`mask_last4` helper in `base.py`; no full account number is retained in memory
-beyond the parse, matching `worth`'s posture.
+Mapped to `AccountData`.
+
+**Correction, 2026-08-24.** An earlier draft of this section claimed no full account
+number is retained, matching `worth`'s posture. That is false as built, and could not
+have been true: `get_transactions` receives only `AccountData.external_id`, and the
+bank's transactions endpoint takes `accountNo`, so `external_id` must carry the real
+number. It is therefore stored in `accounts.external_id` in Postgres and returned by
+`AccountRead`. `worth` could mask everywhere because it never called back per account;
+this provider does. `mask_last4` still supplies `masked_number` for display.
+
+The claim is corrected here rather than deleted, because four documents in the
+predecessor project once asserted a guarantee that did not exist, and the fix for that
+is to say what the mechanism actually does.
 
 Ambiguity rules, ported unchanged:
 
@@ -400,9 +410,22 @@ Cases that must exist, each corresponding to a rule above:
 The owner clarified on 2026-08-24 that the Access Bank **USD (domiciliary)** account
 is the one worth importing; the naira account is not needed.
 
-This barely moves the design — the provider returns every account the bank lists and
-Securo links the ones the owner picks, so "only USD" is a linking choice, not a code
-path. Three things do change:
+**Correction, 2026-08-24.** This section originally said "only USD" was a linking
+choice rather than a code path, because the provider returns every account and Securo
+links the ones the owner picks. **There is no picking step.**
+`connection_service.handle_oauth_callback` creates an `Account` row for every account
+the provider returns and immediately pulls 90 days of transactions for each; accounts
+can only be *closed* after import, not declined before it.
+
+Left alone, connecting would auto-import the naira account the owner hand-tracks —
+double-counting it against the typed-in NGN holdings, and landing an NGN balance in a
+USD net worth at the 1:1 fallback rate this document flags as a hazard elsewhere.
+
+**Decision (owner, 2026-08-24): filter in the provider.** A connection setting names
+the currency to import, and the provider returns only matching accounts. The
+hand-entered naira stays the single source of truth for NGN.
+
+Three further things change:
 
 1. **~~The discovery was performed against the naira account.~~ Re-verified
    2026-08-24 against Dom Savings Classic: the USD account returns an identical
@@ -436,3 +459,25 @@ One assumption remains and cannot be closed by observation: the value sets above
 what a live account produced on one day. They are treated as the complete set, and
 every parser fails closed on anything outside them — which is precisely how a
 surprise becomes a visible error instead of wrong money.
+
+## The connect UI is a follow-up, not part of this work
+
+**Recorded 2026-08-24, after the final review.**
+
+This provider declares `flow_type: "credentials"`, a value Securo's frontend has never
+seen. Access Bank therefore appears in the connector picker and looks clickable once
+`ACCESSBANK_ENABLED=true`, but none of the three connect dialogs is keyed to that flow
+type, so clicking it does nothing. `handleReconnectClick` is worse: it falls through its
+`oauth` and `token` checks into the Pluggy widget branch.
+
+Until the follow-up lands, a connection is created by POSTing the credential blob to the
+connections callback endpoint directly.
+
+**Decision (owner, 2026-08-24): merge this branch as the working backend and add the UI
+in a separate plan.** The reason is the one that chose Securo's conventions in the first
+place — frontend work touches upstream files and raises the cost of every future
+`git merge upstream/main`. Keeping it separate keeps this branch's scope honest.
+
+This is recorded here because the architecture section above says "nothing else upstream
+is modified", which is true and is exactly why the feature is not yet reachable from a
+browser. Stating the consequence is the point.
