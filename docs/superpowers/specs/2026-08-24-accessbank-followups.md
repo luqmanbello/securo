@@ -58,12 +58,18 @@ Each was raised by a review and judged not worth fixing now.
   the stale balance persists. Inherent to filtering in the provider plus Securo's
   existing sync semantics. Close the account by hand if this happens.
 
-- **Encryption does not defend against backup theft in this homelab.** The password is
-  Fernet-encrypted at rest, keyed on `SECRET_KEY` — which lives in a k8s Secret on the
-  same VM, and `k3s secrets-encrypt` is disabled there, so both the ciphertext and the
-  key ride the same nightly archive. The encryption is still worth having: it defends
-  against database-level exposure. The control for the backup threat is enabling
-  `k3s secrets-encrypt` on VM 190, which is homelab work, not application work.
+- **Encryption at rest is not, on its own, protection against backup theft.** The
+  password is Fernet-encrypted using a key derived from the application `SECRET_KEY`.
+  Whether that helps depends entirely on where `SECRET_KEY` lives relative to the
+  database backup: if a single archive carries both the ciphertext and the key, the
+  encryption buys nothing against whoever holds that archive. It does defend against
+  database-level exposure — a stray dump, a stolen volume, read access to Postgres —
+  which is a real and separate threat.
+
+  Deployers should check two things in their own environment: whether cluster-level
+  secret encryption is enabled, and whether the key and the data end up in the same
+  backup. Both are deployment concerns rather than application concerns, and neither is
+  visible from this repository.
 
 ## Live verification, 2026-08-25
 
