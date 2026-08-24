@@ -33,6 +33,7 @@ import { BankConnectDialog } from '@/components/bank-connect-dialog'
 import { ConnectorSelectDialog, type Provider } from '@/components/connector-select-dialog'
 import { OAuthConnectDialog } from '@/components/oauth-connect-dialog'
 import { TokenConnectDialog } from '@/components/token-connect-dialog'
+import { CredentialsConnectDialog } from '@/components/credentials-connect-dialog'
 import { ConnectionSettingsDialog } from '@/components/connection-settings-dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
@@ -79,6 +80,7 @@ export default function AccountsPage() {
   const [reconnectConnId, setReconnectConnId] = useState<string | null>(null)
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
   const [tokenReconnectConnection, setTokenReconnectConnection] = useState<BankConnection | null>(null)
+  const [credentialsReconnectConnection, setCredentialsReconnectConnection] = useState<BankConnection | null>(null)
 
   const { data: accountsList, isLoading: accountsLoading } = useQuery({
     queryKey: ['accounts'],
@@ -116,6 +118,10 @@ export default function AccountsPage() {
     }
     if (providerInfo?.flow_type === 'token') {
       setTokenReconnectConnection(conn)
+      return
+    }
+    if (providerInfo?.flow_type === 'credentials') {
+      setCredentialsReconnectConnection(conn)
       return
     }
     // Widget flow (Pluggy): re-open the widget with the existing item_id.
@@ -602,6 +608,13 @@ export default function AccountsPage() {
         supportsAssetSync={selectedProvider?.supports_asset_sync ?? false}
       />
 
+      {/* Credentials Connect Dialog — username/password flow (Access Bank) */}
+      <CredentialsConnectDialog
+        open={!!selectedProvider && selectedProvider.flow_type === 'credentials'}
+        onClose={() => setSelectedProvider(null)}
+        provider={selectedProvider?.name ?? ''}
+      />
+
       {/* Reconnect Dialog — widget-based (Pluggy) */}
       <BankConnectDialog
         open={!!reconnectConnId}
@@ -616,6 +629,14 @@ export default function AccountsPage() {
         onClose={() => setTokenReconnectConnection(null)}
         provider={tokenReconnectConnection?.provider ?? ''}
         reconnectConnectionId={tokenReconnectConnection?.id}
+      />
+
+      {/* Reconnect Dialog — username/password flow (Access Bank) */}
+      <CredentialsConnectDialog
+        open={!!credentialsReconnectConnection}
+        onClose={() => setCredentialsReconnectConnection(null)}
+        provider={credentialsReconnectConnection?.provider ?? ''}
+        reconnectConnectionId={credentialsReconnectConnection?.id}
       />
 
       {/* Connection Settings Dialog */}
