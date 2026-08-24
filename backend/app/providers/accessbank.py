@@ -408,9 +408,9 @@ def _encrypt_password(key: rsa.RSAPublicKey, password: str) -> str:
 def _token_claims(token: Any, stage: str) -> dict:
     """Decode a JWT payload WITHOUT verifying the signature.
 
-    The claims are not trusted for any security decision. They only supply the
-    ids the next request must echo, exactly as the bank's own browser client
-    does.
+    The claims are not trusted for any security decision. They supply ids that
+    are echoed on subsequent requests. The signature is deliberately NOT
+    verified, and claims are never used for any security decision.
     """
     if not isinstance(token, str) or token.count(".") != 2:
         raise AccessBankError(stage, "schema")
@@ -521,11 +521,13 @@ class AccessBankProvider(BankProvider):
         customer_id = str(claims.get("customerId") or "")
         if not customer_id:
             raise AccessBankError("authenticate", "schema")
-        # The claim, NOT the login username: the bank's internal userId can
-        # differ from what the owner typed to sign in, and later requests
-        # must echo what the bank itself calls the session — exactly like
-        # customerId above, and exactly as the bank's own browser client
-        # does (see the module docstring on `_token_claims`).
+        # The claim is used ONLY by the transactions request, not by the
+        # accounts request. The accounts request deliberately sends the login
+        # username (above as `user_id`) instead, because that request shape is
+        # proven against the live bank. Claim-sourcing for transactions is an
+        # inference from a captured request body that showed only a length, not
+        # a source. If live transactions come back empty, session.login_user_id
+        # is the first thing to try here.
         claim_user_id = str(claims.get("userId") or "")
         if not claim_user_id:
             raise AccessBankError("authenticate", "schema")
