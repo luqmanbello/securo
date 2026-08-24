@@ -60,12 +60,30 @@ def test_only_four_paths_are_declared():
 
 
 def test_no_forbidden_capability_in_paths():
-    """No transfer, payment, beneficiary or statement endpoint."""
+    """Scans this module's SOURCE (not just its declared `_PATH_*` globals)
+    for every string literal beginning with "/", and requires each one to be
+    both one of the four declared paths and free of a forbidden capability
+    word. An inline path literal dropped into a `client.post(...)` call —
+    which the previous version of this test, checking only `_PATH_*`
+    globals, would have missed entirely — fails this outright."""
+    import ast
+    import inspect
+
     import app.providers.accessbank as mod
 
-    joined = " ".join(v for k, v in vars(mod).items() if k.startswith("_PATH_"))
+    declared = {v for k, v in vars(mod).items() if k.startswith("_PATH_")}
+    tree = ast.parse(inspect.getsource(mod))
+    literals = {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value.startswith("/")
+    }
+    assert literals <= declared, f"undeclared path literal(s) found: {literals - declared}"
     for forbidden in ("transfer", "payment", "beneficiar", "statement", "cheque", "token-request"):
-        assert forbidden not in joined.lower()
+        for literal in literals:
+            assert forbidden not in literal.lower()
 
 
 def test_ssl_context_verifies_and_loads_the_pinned_chain():
@@ -82,6 +100,16 @@ def test_ssl_context_verifies_and_loads_the_pinned_chain():
 def test_error_message_never_leaks_detail():
     err = AccessBankError("authenticate", "rejected")
     assert str(err) == "accessbank: authenticate failed (rejected)"
+
+
+def test_error_message_includes_an_explicit_non_sensitive_detail_when_given():
+    """`detail` is additive (F3) — stage and category are unaffected, and a
+    non-sensitive value like a currency code is folded into the message."""
+    err = AccessBankError("accounts", "ambiguous", detail="USD")
+    assert err.stage == "accounts"
+    assert err.category == "ambiguous"
+    assert err.detail == "USD"
+    assert str(err) == "accessbank: accounts failed (ambiguous: USD)"
 
 
 def test_loads_decodes_json_numbers_as_decimal():
@@ -253,6 +281,30 @@ def test_raise_for_status_allows_success():
     assert _raise_for_status(200, "accounts") is None
 
 
+def test_raise_for_status_config_401_is_not_a_credential_rejection():
+    """F4: the `config` GET is UNAUTHENTICATED -- no credential has been
+    sent yet -- so a 401/403 there (a WAF/Cloudflare block on the reader's
+    IP, most likely) must not read as a rejected password and send the
+    owner into a pointless re-entry loop."""
+    for code in (401, 403):
+        with pytest.raises(AccessBankError) as exc:
+            _raise_for_status(code, "config")
+        assert exc.value.stage == "config"
+        assert exc.value.category == "http"
+
+
+def test_raise_for_status_stale_token_mid_operation_is_session_expired():
+    """F4: a 401/403 on `accounts` or `transactions` means the bearer token
+    from a prior successful authenticate went stale mid-operation -- a
+    session expiry, not a bad credential."""
+    from app.providers.base import SessionExpiredError
+
+    for stage in ("accounts", "transactions"):
+        for code in (401, 403):
+            with pytest.raises(SessionExpiredError):
+                _raise_for_status(code, stage)
+
+
 def test_read_body_rejects_an_oversized_body():
     """A body exceeding _MAX_BODY_BYTES raises AccessBankError with
     category 'oversize'. A normal body is returned unchanged."""
@@ -344,7 +396,11 @@ def _install_transport(handler):
 def _bank(accounts: list[dict], private_key, calls: list | None = None):
     """A fake Access Bank serving config, auth and accounts."""
     doc = _config_doc(private_key.public_key())
-    token = _jwt({"customerId": "123456789", "userId": "theuserid"})
+    # The claim userId is deliberately NOT _CREDS["user_id"] ("theuserid"):
+    # if the module ever regressed to echoing the login username instead of
+    # the claim (F1), a test asserting on the request body's userId would be
+    # unable to tell the difference otherwise.
+    token = _jwt({"customerId": "123456789", "userId": "bank-side-user"})
 
     def handler(request: httpx.Request) -> httpx.Response:
         if calls is not None:
@@ -390,6 +446,22 @@ async def test_get_accounts_maps_balances():
 
 
 @pytest.mark.asyncio
+async def test_get_accounts_allows_a_negative_balance():
+    """F2's guard lives in `_map_transaction`, NOT `_parse_money` -- a
+    negative `availableBalance` is a legitimate overdraft and must keep
+    working."""
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "0000000001", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "-42.50"},
+    ]
+    with _install_transport(_bank(accounts, key)):
+        result = await AccessBankProvider().get_accounts(_CREDS)
+    assert result[0].balance == Decimal("-42.50")
+
+
+@pytest.mark.asyncio
 async def test_get_accounts_refuses_two_accounts_in_one_currency():
     """Guessing which of two same-currency accounts is which is worse than
     refusing. Ported from worth."""
@@ -405,7 +477,11 @@ async def test_get_accounts_refuses_two_accounts_in_one_currency():
     with _install_transport(_bank(accounts, key)):
         with pytest.raises(AccessBankError) as exc:
             await AccessBankProvider().get_accounts(_CREDS)
+    assert exc.value.stage == "accounts"
     assert exc.value.category == "ambiguous"
+    # F3: which currency was ambiguous must be named, not just "ambiguous".
+    assert exc.value.detail == "USD"
+    assert "USD" in str(exc.value)
 
 
 @pytest.mark.asyncio
@@ -444,6 +520,27 @@ async def test_rejected_credential_is_not_retried():
             await AccessBankProvider().get_accounts(_CREDS)
 
     assert calls.count(_PATH_AUTHENTICATE) == 1
+
+
+@pytest.mark.asyncio
+async def test_open_session_fails_closed_when_the_userid_claim_is_missing():
+    """F1: userId is read from the JWT claims exactly as customerId already
+    is, and fails closed the same way if the claim is absent or empty."""
+    key = _make_key(2048)
+    token = _jwt({"customerId": "123456789"})  # no userId claim at all
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=_config_doc(key.public_key()))
+        if request.url.path == _PATH_AUTHENTICATE:
+            return httpx.Response(200, json={"data": {"idToken": token}})
+        return httpx.Response(404)
+
+    with _install_transport(handler):
+        with pytest.raises(AccessBankError) as exc:
+            await AccessBankProvider().get_accounts(_CREDS)
+    assert exc.value.stage == "authenticate"
+    assert exc.value.category == "schema"
 
 
 @pytest.mark.asyncio
@@ -509,6 +606,68 @@ async def test_get_accounts_defaults_an_unknown_account_type_without_raising():
 
 
 @pytest.mark.asyncio
+async def test_get_accounts_fails_closed_on_an_unmapped_card_or_loan_type():
+    """Ruling patch: defaulting an unmapped CARD or LOAN product to
+    "savings" would report debt as a positive asset and inflate net worth --
+    money-visible, not a display label -- so this fails closed instead of
+    defaulting, unlike every other unmapped type (see
+    test_get_accounts_defaults_an_unknown_account_type_without_raising)."""
+    key = _make_key(2048)
+    for bad_type in ("CREDIT CARD", "LOAN ACCOUNT", "card", "personal loan"):
+        accounts = [
+            {"accountNumber": "0000000001", "accountType": bad_type,
+             "accountStatus": "ACTIVE", "accountCurrency": "USD",
+             "availableBalance": "1.00"},
+        ]
+        with _install_transport(_bank(accounts, key)):
+            with pytest.raises(AccessBankError) as exc:
+                await AccessBankProvider().get_accounts(_CREDS)
+        assert exc.value.stage == "accounts"
+        assert exc.value.category == "type"
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_skips_a_closed_account_without_ambiguity_abort():
+    """F6: a CLOSED (or DORMANT/INACTIVE) duplicate-currency account must be
+    skipped BEFORE the ambiguity check runs, not trigger it -- otherwise a
+    closed second USD account would permanently abort every balance read.
+    The still-active account must still map."""
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "0000000001", "accountType": "SAVINGS",
+         "accountStatus": "ACTIVE", "accountCurrency": "USD",
+         "availableBalance": "1.00"},
+        {"accountNumber": "0000000002", "accountType": "CURRENT",
+         "accountStatus": "CLOSED", "accountCurrency": "USD",
+         "availableBalance": "2.00"},
+    ]
+    with _install_transport(_bank(accounts, key)):
+        result = await AccessBankProvider().get_accounts(_CREDS)
+
+    assert len(result) == 1
+    assert result[0].external_id == "0000000001"
+    assert result[0].currency == "USD"
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_never_filters_on_status_not_equal_active():
+    """F6: the status vocabulary beyond "ACTIVE" is unverified, so this must
+    be a known-closed ALLOWLIST, not an `!= "ACTIVE"` denylist -- a status
+    word never seen before must still map, not be silently dropped."""
+    key = _make_key(2048)
+    accounts = [
+        {"accountNumber": "0000000001", "accountType": "SAVINGS",
+         "accountStatus": "SOME_UNSEEN_STATUS", "accountCurrency": "USD",
+         "availableBalance": "1.00"},
+    ]
+    with _install_transport(_bank(accounts, key)):
+        result = await AccessBankProvider().get_accounts(_CREDS)
+
+    assert len(result) == 1
+    assert result[0].external_id == "0000000001"
+
+
+@pytest.mark.asyncio
 async def test_open_session_rejects_a_non_dict_response():
     """A top-level JSON array from `authenticate` must raise AccessBankError,
     not AttributeError, from indexing a non-dict."""
@@ -568,7 +727,8 @@ def _txn(ref: str, amount, ttype: str = "DEBIT", day: str = "23-AUG-2026") -> di
 def _paging_bank(pages: list[list[dict]], private_key, seen: list[dict]):
     """A fake bank returning `pages[n-1]` for pageNumber n."""
     doc = _config_doc(private_key.public_key())
-    token = _jwt({"customerId": "123456789", "userId": "theuserid"})
+    # See _bank() above: deliberately not _CREDS["user_id"].
+    token = _jwt({"customerId": "123456789", "userId": "bank-side-user"})
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == _PATH_CONFIG:
@@ -624,9 +784,35 @@ async def test_get_transactions_stops_at_the_hard_page_cap():
 
 @pytest.mark.asyncio
 async def test_get_transactions_sends_the_documented_request():
+    """M3: the JWT claims are deliberately NUMERIC here (not the strings
+    every other fixture in this file uses) so `all(isinstance(v, str) ...)`
+    below can actually fail if the module stops coercing claim values with
+    str() before putting them on the wire.
+
+    F1: `customerID`/`userID` are asserted to be the CLAIM values, and the
+    claim userId is deliberately not `_CREDS["user_id"]`, so this also fails
+    if the module regresses to echoing the login username instead of the
+    bank's own claim."""
     key = _make_key(2048)
     seen: list[dict] = []
-    with _install_transport(_paging_bank([[]], key, seen)):
+    doc = _config_doc(key.public_key())
+    token = _jwt({"customerId": 123456789, "userId": 55555})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _PATH_CONFIG:
+            return httpx.Response(200, json=doc)
+        if request.url.path == _PATH_AUTHENTICATE:
+            return httpx.Response(200, json={"data": {"idToken": token}})
+        if request.url.path == _PATH_TRANSACTIONS:
+            body = json.loads(request.content)
+            seen.append(body)
+            payload = json.dumps({"statusCode": 200, "description": None, "data": []})
+            return httpx.Response(
+                200, content=payload.encode(), headers={"content-type": "application/json"}
+            )
+        return httpx.Response(404)
+
+    with _install_transport(handler):
         await AccessBankProvider().get_transactions(_CREDS, "9876543210")
 
     body = seen[0]
@@ -636,6 +822,9 @@ async def test_get_transactions_sends_the_documented_request():
     assert body["pageSize"] == _PAGE_SIZE
     assert body["noOfDays"] == str(_MAX_DAYS)
     assert all(isinstance(v, str) for v in body.values())
+    assert body["customerID"] == "123456789"
+    assert body["userID"] == "55555"
+    assert body["userID"] != _CREDS["user_id"]
 
 
 @pytest.mark.asyncio
@@ -672,6 +861,33 @@ async def test_get_transactions_maps_fields_and_keeps_money_exact():
     assert txn.date == date(2026, 8, 9)
     assert txn.currency == "USD"
     assert txn.description == "ATM WITHDRAWAL"
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_rejects_a_negative_amount():
+    """F2: Securo computes case(type=='credit', +amt, else -amt). A negative
+    amount on a DEBIT would double-negate into a credit, so `_map_transaction`
+    -- not `_parse_money`, which must keep allowing negative account
+    balances (overdrafts) -- refuses any transaction amount below zero."""
+    key = _make_key(2048)
+    seen: list[dict] = []
+    pages = [[_txn("R1", Decimal("-5.00"), "DEBIT")]]
+    with _install_transport(_paging_bank(pages, key, seen)):
+        with pytest.raises(AccessBankError) as exc:
+            await AccessBankProvider().get_transactions(_CREDS, "9876543210")
+    assert exc.value.stage == "transactions"
+    assert exc.value.category == "schema"
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_allows_a_zero_amount():
+    """Zero is allowed; only strictly-negative amounts are refused."""
+    key = _make_key(2048)
+    seen: list[dict] = []
+    pages = [[_txn("R1", Decimal("0.00"), "DEBIT")]]
+    with _install_transport(_paging_bank(pages, key, seen)):
+        result = await AccessBankProvider().get_transactions(_CREDS, "9876543210")
+    assert result[0].amount == Decimal("0.00")
 
 
 @pytest.mark.asyncio
@@ -748,7 +964,24 @@ async def test_get_transactions_rejects_a_non_dict_response():
             await AccessBankProvider().get_transactions(_CREDS, "9876543210")
 
 
-from app.providers import all_known_providers, get_provider, register_provider
+from app.providers import _PROVIDERS, all_known_providers, get_provider, register_provider
+
+
+@pytest.fixture(autouse=True)
+def _clean_accessbank_registration():
+    """`register_provider("accessbank", ...)` mutates the module-global
+    `_PROVIDERS` dict with no teardown of its own (M8). Snapshot and restore
+    rather than a blind `.pop()`, in case accessbank is already legitimately
+    auto-registered (see `app/providers/__init__.py`'s
+    `_auto_register_providers`, gated on `settings.accessbank_enabled`) —
+    mirrors `_clean_registry` in `tests/test_providers.py`."""
+    had_entry = "accessbank" in _PROVIDERS
+    previous = _PROVIDERS.get("accessbank")
+    yield
+    if had_entry:
+        _PROVIDERS["accessbank"] = previous
+    else:
+        _PROVIDERS.pop("accessbank", None)
 
 
 @pytest.mark.asyncio

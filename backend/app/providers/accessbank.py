@@ -6,8 +6,12 @@ is no transfer, payment, beneficiary, statement, cheque or token-request call
 here, and no OTP or device-challenge handling.
 
 Only the four paths below may ever be requested. `test_only_four_paths_are_
-declared` fails the suite if a fifth appears — the review step that replaces
-`worth`'s build-time guard.
+declared` checks the module's declared `_PATH_*` globals against that exact
+set; `test_no_forbidden_capability_in_paths` separately parses this file's
+source and checks every `/`-leading string literal in it against the same
+set, so an inline path literal slipped into a call site cannot sail through
+undetected. Together they are the review step that replaces `worth`'s
+build-time guard.
 
 Nothing is persisted by this module. The password, the RSA ciphertext, the
 bearer token and every raw response body live for the duration of one
@@ -37,6 +41,7 @@ from app.providers.base import (
     ConnectionData,
     ProviderRateLimited,
     ProviderUserActionRequired,
+    SessionExpiredError,
     TransactionData,
     mask_last4,
 )
@@ -47,7 +52,12 @@ _PATH_AUTHENTICATE = "/gateway/api/session-manager/session/authenticate"
 _PATH_ACCOUNTS = "/gateway/api/customer-detail/fetch-customer-account-details"
 _PATH_TRANSACTIONS = "/gateway/api/query-transaction/transaction-history"
 
-# One whole operation, not one hop.
+# httpx applies a bare float independently to EACH request phase (connect,
+# read, write, pool acquisition), not once to a whole call — so this is a
+# per-phase ceiling, not a ceiling on one operation. With _MAX_PAGES=50, one
+# get_transactions call legitimately issues up to 50 requests, each phase of
+# each individually capped at this value, so the call as a whole can
+# legitimately run for many minutes.
 ACCESSBANK_HTTP_TIMEOUT = 30.0
 
 # Cap the body that is parsed. All call sites use non-streaming HTTP methods,
@@ -74,14 +84,22 @@ logger = logging.getLogger(__name__)
 class AccessBankError(RuntimeError):
     """A failure at one stage of the read.
 
-    Carries a stage and a category only. A response body, header, URL, token
-    or password must never reach this message.
+    Carries a stage and a category, plus an optional detail. A response body,
+    header, URL, token or password must never reach this message — `detail`
+    exists only for values that are not sensitive (e.g. a currency code) and
+    that materially help diagnose which of several instances of a category
+    fired. `stage` and `category` alone must remain enough to match on for
+    existing callers; `detail` is additive and never changes either.
     """
 
-    def __init__(self, stage: str, category: str) -> None:
+    def __init__(self, stage: str, category: str, detail: str | None = None) -> None:
         self.stage = stage
         self.category = category
-        super().__init__(f"accessbank: {stage} failed ({category})")
+        self.detail = detail
+        message = f"accessbank: {stage} failed ({category})"
+        if detail:
+            message = f"accessbank: {stage} failed ({category}: {detail})"
+        super().__init__(message)
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -110,16 +128,37 @@ _TXN_TYPES = {"CREDIT": "credit", "DEBIT": "debit"}
 # The bank sends uppercase. Compare exactly, same as _TXN_TYPES.
 #
 # Unlike every other fail-closed rule in this module, an unrecognised value
-# here is NOT terminal. Every other check (the amount, the date, the
-# direction) protects money correctness. Account type does not affect money
-# in Securo except for "credit_card", which flips the balance sign in
-# `_account_balance_at` — so an account type must never default to
-# "credit_card". Aborting an entire balance read because the bank labelled
-# an account "DOMICILIARY" would be a worse trade than a defaulted display
-# label, so `_map_accounts` defaults to "savings" and logs a warning instead
-# of raising. Do not "tighten" this into a fail-closed check without
-# re-reading this comment.
+# here is NOT terminal, WITH ONE EXCEPTION below. Every other check (the
+# amount, the date, the direction) protects money correctness. Account type
+# does not affect money in Securo except for "credit_card", which flips the
+# balance sign in `_account_balance_at` — so an account type must never
+# default to "credit_card". Aborting an entire balance read because the bank
+# labelled an account "DOMICILIARY" would be a worse trade than a defaulted
+# display label, so `_map_accounts` defaults an unmapped type to "savings"
+# and logs a warning instead of raising.
+#
+# THE EXCEPTION: "savings" is the right default for a deposit product, but it
+# is wrong for a liability product — defaulting a credit card or a loan
+# account to "savings" reports DEBT AS A POSITIVE ASSET and inflates net
+# worth, which is money-visible, not a display label, and is exactly the
+# class of bug every other fail-closed rule in this module exists to
+# prevent. So `_map_accounts` raises `AccessBankError("accounts", "type")`
+# for any unmapped type whose string contains "CARD" or "LOAN" (case
+# insensitive), and only defaults everything else. Do not "tighten" this
+# further, and do not remove the card/loan check, without re-reading this
+# comment.
 _ACCOUNT_TYPES = {"SAVINGS": "savings", "CURRENT": "checking"}
+
+# Known-closed account statuses. `_map_accounts` skips these BEFORE the
+# ambiguity check runs, so a closed duplicate-currency account cannot abort
+# an otherwise-good balance read (see F6). The bank's status vocabulary is
+# UNVERIFIED beyond "ACTIVE" — this set is what the design's original
+# fixtures assumed, not something captured from the live API — so it is
+# deliberately a known-closed ALLOWLIST rather than an `!= "ACTIVE"`
+# denylist: a status word this module has never seen must fall through to
+# mapping/ambiguity, not be silently dropped. Needs one live observation to
+# confirm or extend.
+_CLOSED_ACCOUNT_STATUSES = {"CLOSED", "DORMANT", "INACTIVE"}
 
 
 def _loads(body: bytes | str, stage: str) -> Any:
@@ -210,16 +249,38 @@ def _map_txn_type(raw: Any, stage: str) -> str:
 
 
 def _raise_for_status(status: int, stage: str) -> None:
-    """Map a bank status onto Securo's provider exceptions.
+    """Map a bank status onto Securo's provider exceptions, stage-aware.
 
-    401, 403 and 429 are terminal and are never retried: retrying a stored
-    bank credential is how a wrong password walks into an account lockout.
+    401/403 means something different at each stage:
+    - `config`: this GET is UNAUTHENTICATED — no credential has been sent
+      yet — so 401/403 here cannot be a rejected credential. It is far more
+      likely a WAF/Cloudflare block on the reader's (datacenter) IP. Treating
+      it as a rejected credential would flip the connection to an error state
+      and send the owner into a pointless password re-entry loop, so this
+      stays a plain `AccessBankError`.
+    - `authenticate`: the credential really was just presented and really was
+      rejected, so this is `ProviderUserActionRequired`.
+    - `accounts` / `transactions`: the bearer token from a prior successful
+      authenticate went stale mid-operation. That is a session expiry, not a
+      bad credential, so this raises `SessionExpiredError`.
+    Any other stage falls through to the generic `AccessBankError(stage,
+    "http")` below rather than being guessed at.
+
+    429 is rate limiting at every stage. Nothing here is ever retried:
+    retrying a stored bank credential is how a wrong password walks into an
+    account lockout.
     """
     if status in (401, 403):
-        raise ProviderUserActionRequired(
-            "Access Bank rejected the stored credential. Re-enter it to reconnect.",
-            code="accessbank_credential_rejected",
-        )
+        if stage == "config":
+            raise AccessBankError("config", "http")
+        if stage == "authenticate":
+            raise ProviderUserActionRequired(
+                "Access Bank rejected the stored credential. Re-enter it to reconnect.",
+                code="accessbank_credential_rejected",
+            )
+        if stage in ("accounts", "transactions"):
+            raise SessionExpiredError("Access Bank session expired mid-operation.")
+        raise AccessBankError(stage, "http")
     if status == 429:
         raise ProviderRateLimited("Access Bank is rate-limiting requests. Try again later.")
     if status >= 400:
@@ -429,10 +490,20 @@ class AccessBankProvider(BankProvider):
             # credential. Both are terminal; neither is retried.
             raise AccessBankError("authenticate", "schema")
         claims = _token_claims(token, "authenticate")
-        customer_id = claims.get("customerId") or ""
+        # Every value on the wire is a string (see M3): coerce with str() at
+        # the point each claim is read, not wherever it later gets used.
+        customer_id = str(claims.get("customerId") or "")
         if not customer_id:
             raise AccessBankError("authenticate", "schema")
-        return AccessBankSession(token=token, customer_id=customer_id, user_id=user_id)
+        # The claim, NOT the login username: the bank's internal userId can
+        # differ from what the owner typed to sign in, and later requests
+        # must echo what the bank itself calls the session — exactly like
+        # customerId above, and exactly as the bank's own browser client
+        # does (see the module docstring on `_token_claims`).
+        claim_user_id = str(claims.get("userId") or "")
+        if not claim_user_id:
+            raise AccessBankError("authenticate", "schema")
+        return AccessBankSession(token=token, customer_id=customer_id, user_id=claim_user_id)
 
     def _map_accounts(self, rows: Any) -> list[AccountData]:
         if not isinstance(rows, list):
@@ -442,6 +513,15 @@ class AccessBankProvider(BankProvider):
         for row in rows:
             if not isinstance(row, dict):
                 raise AccessBankError("accounts", "schema")
+            status = row.get("accountStatus")
+            if isinstance(status, str) and status in _CLOSED_ACCOUNT_STATUSES:
+                # See _CLOSED_ACCOUNT_STATUSES: skip BEFORE the ambiguity
+                # check below runs, so a closed duplicate-currency account
+                # cannot abort an otherwise-good read.
+                logger.info(
+                    "accessbank: skipping account with status %r", status
+                )
+                continue
             number = row.get("accountNumber")
             currency = row.get("accountCurrency")
             acct_type = row.get("accountType")
@@ -449,8 +529,11 @@ class AccessBankProvider(BankProvider):
                 raise AccessBankError("accounts", "schema")
             account_type = _ACCOUNT_TYPES.get(str(acct_type))
             if account_type is None:
-                # See the comment on _ACCOUNT_TYPES: defaulted, not raised,
-                # and never "credit_card".
+                # See the comment on _ACCOUNT_TYPES: defaulted, not raised —
+                # EXCEPT a card or loan product, which fails closed rather
+                # than reporting debt as a positive asset.
+                if "CARD" in str(acct_type).upper() or "LOAN" in str(acct_type).upper():
+                    raise AccessBankError("accounts", "type")
                 logger.warning(
                     "accessbank: unmapped account type %r; defaulting to savings",
                     acct_type,
@@ -460,10 +543,12 @@ class AccessBankProvider(BankProvider):
                            _parse_money(row.get("availableBalance"), "accounts")))
 
         # Two accounts in one currency: map neither, rather than guess which
-        # holding each belongs to.
-        duplicates = [c for c, n in Counter(c for _, c, _, _ in parsed).items() if n > 1]
+        # holding each belongs to. Name the ambiguous currency(-ies) in the
+        # error — currency codes are not sensitive, and naming them is what
+        # makes this diagnosable instead of just "something is ambiguous".
+        duplicates = sorted(c for c, n in Counter(c for _, c, _, _ in parsed).items() if n > 1)
         if duplicates:
-            raise AccessBankError("accounts", "ambiguous")
+            raise AccessBankError("accounts", "ambiguous", detail=",".join(duplicates))
 
         return [
             AccountData(
@@ -502,10 +587,19 @@ class AccessBankProvider(BankProvider):
         # `beneficiary` and `sender` use "" for absence while the *bank* fields
         # use null. Neither may be read as the other.
         narration = row.get("transactionNarration") or ""
+        amount = _parse_money(row.get("transactionAmount"), "transactions")
+        if amount < 0:
+            # Guarded HERE, not in `_parse_money`: a negative balance is a
+            # legitimate overdraft on an account and must keep working, but a
+            # negative transaction amount double-negates through Securo's
+            # `case(type=='credit', +amt, else -amt)` — a negative DEBIT
+            # would become a credit, moving money the wrong way. Zero is
+            # allowed; only strictly-negative is refused.
+            raise AccessBankError("transactions", "schema")
         return TransactionData(
             external_id=str(ref),
             description=narration,
-            amount=_parse_money(row.get("transactionAmount"), "transactions"),
+            amount=amount,
             date=_parse_date(row.get("transactionDate"), "transactions"),
             type=_map_txn_type(row.get("transactionType"), "transactions"),
             currency=str(currency),
@@ -514,7 +608,17 @@ class AccessBankProvider(BankProvider):
 
     def _window_days(self, since: Optional[date]) -> int:
         """Days to request. `since` narrows the window; it can never widen it
-        past the bank's own cap, which no parameter appears to lift."""
+        past the bank's own cap, which no parameter appears to lift.
+
+        This requests EXACTLY `elapsed` days — no margin of its own. The
+        spec's "comfortably wider than the gap since last_sync_at" holds only
+        because the caller (`app/services/connection_service.py`, the
+        `get_transactions` call site around where it computes `since` from
+        `last_sync_at`) subtracts an extra ~14 days before passing `since`
+        in. That upstream margin is a dependency of this method's
+        correctness, not an implementation detail of it — do not remove it
+        from the caller without adding one here instead.
+        """
         if since is None:
             return _MAX_DAYS
         elapsed = (date.today() - since).days
