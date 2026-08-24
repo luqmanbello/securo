@@ -103,9 +103,11 @@ def test_ssl_context_verifies_and_loads_the_pinned_chain():
     ctx = _ssl_context()
     assert ctx.verify_mode == ssl.CERT_REQUIRED
     assert ctx.check_hostname is True
-    # The pinned intermediate is loaded in addition to the system roots,
-    # never instead of them.
-    assert len(ctx.get_ca_certs()) > 1
+    # The pinned intermediate is loaded IN ADDITION to the system roots,
+    # never instead of them — so the context carries strictly more CAs than
+    # a default one. Comparing counts proves the addition without depending
+    # on how many roots the host happens to ship.
+    assert len(ctx.get_ca_certs()) > len(ssl.create_default_context().get_ca_certs())
 
 
 def test_error_message_never_leaks_detail():
@@ -809,11 +811,20 @@ from app.providers.base import mask_last4
 
 
 def _install_transport(handler):
-    """Replace AccessBankProvider._client with one wired to a MockTransport."""
+    """Replace AccessBankProvider._client with one wired to a MockTransport.
+
+    `base_url` must be set here. The provider posts relative paths, so a
+    client without a base URL raises "Invalid URL: No scheme included"
+    before the transport is ever consulted.
+    """
     transport = httpx.MockTransport(handler)
 
     def _fake_client(self):
-        return httpx.AsyncClient(transport=transport, timeout=30)
+        return httpx.AsyncClient(
+            transport=transport,
+            base_url="https://ibank.accessbankplc.com",
+            timeout=30,
+        )
 
     return patch.object(AccessBankProvider, "_client", _fake_client)
 
@@ -859,8 +870,11 @@ async def test_get_accounts_maps_balances():
     assert usd.balance == Decimal("2350.10")
     assert isinstance(usd.balance, Decimal)
     assert usd.masked_number == mask_last4("9876543210")
-    # The full account number never reaches the mapped object.
-    assert "9876543210" not in str(usd.__dict__)
+    # external_id carries the FULL account number, by necessity: the
+    # transactions endpoint takes `accountNo`, and get_transactions receives
+    # only this value. worth could mask everywhere because it never called
+    # back per account; Securo does. `masked_number` is what display uses.
+    assert usd.external_id == "9876543210"
 
 
 @pytest.mark.asyncio
