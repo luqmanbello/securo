@@ -1,0 +1,41 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: securo
+
+resources:
+  - manifests.yaml
+  - ciliumnetworkpolicy.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/part-of: homelab
+      app.kubernetes.io/managed-by: argocd
+    includeSelectors: true
+
+# charts/securo/templates/backend/job-migration.yaml ships as a Helm hook
+# (`helm.sh/hook: post-install,post-upgrade`), which means nothing once
+# `helm template` has flattened it into manifests.yaml and Argo CD is
+# syncing it as a plain Kustomize-sourced resource -- Argo only interprets
+# `helm.sh/hook` when an Application's source is itself a Helm chart, not a
+# directory it runs Kustomize over.
+#
+# Left alone, that makes the second-ever sync fail outright: batch/v1 Job
+# .spec.template is immutable, so re-applying `securo-migration` with a new
+# image digest errors instead of updating, and the whole sync gets stuck
+# behind it. This patch adds Argo's own Sync-hook annotations so Argo
+# deletes and recreates the Job on every sync instead of trying to patch it
+# in place -- BeforeHookCreation deletes the previous run's Job first, which
+# is what makes the immutable field a non-issue.
+patches:
+  - target:
+      kind: Job
+      name: securo-migration
+    patch: |-
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1hook
+        value: Sync
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1hook-delete-policy
+        value: BeforeHookCreation
