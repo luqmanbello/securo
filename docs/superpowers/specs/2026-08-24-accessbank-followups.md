@@ -113,15 +113,33 @@ re-import — the bank still holds everything. After a year it costs nine months
 that no longer exist anywhere. The exposure grows every day the app runs, and
 nothing about the system signals that.
 
-Not solved here, and not this repository's lane to solve. Options, roughly in
-increasing cost: accept it and re-import the 90 days; lengthen the archive
-retention; or add an application-level dump on its own schedule to a separate
-volume — which is the pattern Paperless already uses in this estate for exactly
-this reason, and is therefore the least novel answer available.
+**Status: deliberately deferred by the owner on 2026-08-25.** Three options were
+put to him — accept it and re-import the 90 days; lengthen the archive
+retention; or add an application-level dump on its own schedule — and he chose
+to defer. That is a decision, not an oversight, and it is written down here for
+the same reason: a deferral nobody recorded is indistinguishable from something
+everyone forgot, and six months from now the difference matters.
 
-Worth knowing: securo has its own workspace-backup feature, including
-password-encrypted exports. That may be the cheapest path to a second copy that
-does not depend on the VM image at all.
+Not this repository's lane to solve if it is picked up.
+
+**If it is picked up, start with securo's own export rather than with retention
+knobs.** `GET /api/export/backup` produces a plain-JSON zip of accounts,
+transactions, categories, rules, budgets and assets, and `bank_connections` is
+NOT in it — the archive contains no credentials at all.
+
+That matters more than the file size. Every other protection examined on
+2026-08-25 failed on the same structural point: the key and the ciphertext ride
+together. The k3s encryption config sits beside the datastore it encrypts; the
+Fernet key derives from a SECRET_KEY in a Secret on the same disk as the PVC;
+the nightly vzdump carries both halves in one archive. An artifact with nothing
+in it to decrypt has no such geometry — there is no key to fail to separate. It
+is a few megabytes, it can be retained for years for cents, and it is the only
+thing here that is safe to keep anywhere without further thought.
+
+The endpoint requires a login token, which a scheduled job should not need. A
+small CLI producing the same archive from inside the backend container, reusing
+the same collect-and-zip path with database access and no HTTP auth, is the
+piece that would need building.
 
 ## Verified against the live cluster, 2026-08-25
 
