@@ -351,10 +351,6 @@ spec:
           volumeMounts:
             - name: attachments
               mountPath: /app/data/attachments
-            - name: agent-knowledge
-              mountPath: /app/data/agent_knowledge
-            - name: agent-embedding-models
-              mountPath: /app/data/embedding_models
           resources:
             limits:
               cpu: 200m
@@ -366,12 +362,6 @@ spec:
         - name: attachments
           persistentVolumeClaim:
             claimName: securo-attachments
-        - name: agent-knowledge
-          persistentVolumeClaim:
-            claimName: securo-agent-knowledge
-        - name: agent-embedding-models
-          persistentVolumeClaim:
-            claimName: securo-agent-embedding-models
 
 ---
 # Source: securo/templates/frontend/deployment.yaml

@@ -165,3 +165,41 @@ cluster default, it is the only StorageClass present, so the chart falling
 through to the default produces exactly what pinning would have. The 8Gi + 2Gi
 request is comfortable against ~78 GiB available, and local-path is
 thin-provisioned so declared PVCs elsewhere are not reserved.
+
+## Chart bug: beat mounted PVCs the chart never created (fixed 2026-08-25)
+
+Found by homelab-platform when securo first synced into the cluster. Five of six
+workloads came up; `securo-beat` sat Pending forever with:
+
+```
+FailedScheduling  persistentvolumeclaim "securo-agent-knowledge" not found
+```
+
+The two agent PVC templates are created only when agents are on AND persistence
+is on:
+
+```
+{{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentKnowledge.enabled }}
+```
+
+`config.agentsEnabled` defaults to `"false"` and `persistence.agentKnowledge.enabled`
+defaults to `true`, so neither PVC is created. That is correct — agents are off.
+
+Three of the four consumers guarded their mounts with the same `and`. `beat` guarded
+on `persistence.*.enabled` alone, on all four conditions (two volumeMounts, two
+volumes), so it alone mounted claims that deliberately do not exist. The pod is
+unschedulable rather than crash-looping, so there are no logs to read.
+
+**Fixed in the fork** by adding the missing half to all four conditions in
+`charts/securo/templates/beat/deployment.yaml`, matching the three sibling
+templates verbatim. `deploy/values.yaml` was deliberately NOT changed: setting
+`persistence.agentKnowledge.enabled: false` would also have unblocked the pod, but
+it would have masked whether the template fix works. Leaving the values at their
+defaults makes the regenerated `manifests.yaml` direct evidence — the beat
+Deployment loses exactly those two mounts and two volumes, and nothing else in the
+render changes.
+
+**This is upstream's bug, inherited, and a clean upstream PR:** one file, four
+lines, with the three already-correct siblings as the argument. It is invisible
+unless someone runs with agents disabled and persistence left at its default,
+which is exactly this deployment's configuration.
