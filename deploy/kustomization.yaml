@@ -30,16 +30,26 @@ labels:
 # is what makes the immutable field a non-issue.
 #
 # Separately: neither the chart nor any of its pod templates set
-# imagePullSecrets, and the backend/frontend images this fork builds land in
-# GHCR private by default on their first push (worth's README documents the
-# same fact for ghcr-pull; securo just never had the knob to carry it). The
-# two patches below add `ghcr-pull` to every workload that pulls a
-# ghcr.io/luqmanbello image -- the four Deployments and the migration Job.
-# postgres and redis pull public docker.io images and are StatefulSets, not
-# Deployments, so the unqualified `kind: Deployment` target does not touch
-# them. A referenced-but-missing Secret is harmless (kubelet warns and falls
-# back to an anonymous pull), so this is safe even before ghcr-pull exists
-# in the securo namespace.
+# imagePullSecrets. The two patches below add `ghcr-pull` to every workload
+# that pulls a ghcr.io/luqmanbello image -- the four Deployments and the
+# migration Job. postgres and redis pull public docker.io images and are
+# StatefulSets, not Deployments, so the unqualified `kind: Deployment` target
+# does not touch them.
+#
+# CORRECTION 2026-08-25: an earlier version of this comment said the images
+# land in GHCR private on first push. They did NOT. Verified by anonymous
+# token pull against ghcr.io: both securo-backend and securo-frontend return
+# HTTP 200 without credentials. Packages published by Actions inherit the
+# repository's visibility, and luqmanbello/securo is public. The earlier claim
+# came from testing tag `v0.14.4-securo-1`, which does not exist -- the
+# metadata action strips the `v`, so the real tags are `0.14.4-securo-1` and
+# `latest` -- and reading "not found" as "private".
+#
+# The patches are KEPT deliberately. They are inert while the packages are
+# public (a referenced-but-missing Secret only makes kubelet warn and fall
+# back to an anonymous pull), and if the repository or packages are ever made
+# private this is already in place rather than becoming an ImagePullBackOff
+# with no stated cause.
 patches:
   - target:
       kind: Job

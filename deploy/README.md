@@ -69,10 +69,23 @@ and `paperless-runtime`. No generated Secret manifest enters Git.
 | `securo-openexchangerates` (namespace `securo`) | `OPENEXCHANGERATES_APP_ID` | backend, celery-worker, celery-beat — deliberately NOT the migration Job |
 | `ghcr-pull` (namespace `securo`) | (docker-registry secret) | every workload that pulls a `ghcr.io/luqmanbello/securo-*` image — the four Deployments and the migration Job, via `imagePullSecrets` added by `deploy/kustomization.yaml`'s patches (the chart has no `imagePullSecrets` knob at all) |
 
-`ghcr-pull` follows the same reasoning as worth's row of the same name: the
-image is pushed to GHCR private by default on first push, and a missing
-Secret here is a silent `ImagePullBackOff`, not a startup error that says
-why.
+**`ghcr-pull` is currently NOT required, and the row above is insurance rather
+than a dependency.** Verified 2026-08-25 by anonymous token pull against
+ghcr.io: both `securo-backend` and `securo-frontend` return HTTP 200 with no
+credentials. Packages published by Actions inherit the repository's visibility,
+and `luqmanbello/securo` is public.
+
+An earlier version of this section claimed the images land private on first
+push, following worth's row of the same name. That was wrong here, and the
+error is worth recording: the check used tag `v0.14.4-securo-1`, which does not
+exist — `docker/metadata-action` strips the `v`, so the published tags are
+`0.14.4-securo-1` and `latest` — and a "not found" was read as "private".
+
+The `imagePullSecrets` patches are kept deliberately. They are inert while the
+packages are public (a referenced-but-missing Secret only makes kubelet warn
+and fall back to an anonymous pull), and if the repository or its packages are
+ever made private the manifests already carry it instead of producing an
+`ImagePullBackOff` with no stated cause.
 
 `deploy/values.yaml` sets `global.existingSecret: securo-runtime`, which
 disables `charts/securo/templates/common/secret.yaml` (the chart's own
