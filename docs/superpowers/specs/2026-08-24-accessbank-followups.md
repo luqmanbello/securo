@@ -122,3 +122,28 @@ this reason, and is therefore the least novel answer available.
 Worth knowing: securo has its own workspace-backup feature, including
 password-encrypted exports. That may be the cheapest path to a second copy that
 does not depend on the VM image at all.
+
+## Verified against the live cluster, 2026-08-25
+
+Two values in `deploy/` were carried as assumptions and have now been measured
+by homelab-platform. Recording both, because one of them was wrong in the
+direction that would have looked healthy.
+
+**`global.tls` must be `true`, and the reasoning that said otherwise was
+inverted.** The flag configures no listener; it only picks the scheme in the
+computed frontend URL. The `local` listener on the Gateway genuinely is plain
+HTTP — but TLS is terminated upstream at Caddy, so the scheme the BROWSER uses
+is https. Both facts are true at once and the flag belongs to the second.
+
+Left `false`, `frontend_url` — the sole entry in the backend's CORS
+`allow_origins` — would have been `http://` while the browser sat on `https://`,
+blocking every API call the UI makes. The pods would have been Healthy and the
+app unusable. `worth` sets its own bank redirect URL to https behind this
+identical HTTP listener, so the precedent said the opposite of what was
+inferred from it.
+
+**Postgres and redis storage needed no change.** `local-path` is not merely the
+cluster default, it is the only StorageClass present, so the chart falling
+through to the default produces exactly what pinning would have. The 8Gi + 2Gi
+request is comfortable against ~78 GiB available, and local-path is
+thin-provisioned so declared PVCs elsewhere are not reserved.

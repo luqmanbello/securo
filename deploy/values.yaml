@@ -17,13 +17,25 @@ global:
   # Local-only hostname, like argocd/hubble/worth: no legacy
   # *.luqmanlabs.com name for a service that never leaves the local network.
   domain: securo.local.luqmanlabs.com
-  # NOTE (unverified from here): if the "local" Gateway listener that
-  # httpRoute.parentRefs targets terminates TLS, this should be `true` --
-  # it flips FRONTEND_URL (and the OIDC/Pluggy/Enable-Banking redirect URIs
-  # the backend derives from it) to https://. Left false to match worth's
-  # plain-HTTP-behind-the-gateway pattern; confirm against the homelab
-  # gateway config before relying on it either way.
-  tls: false
+  # VERIFIED against the live cluster 2026-08-25 (homelab-platform).
+  #
+  # This flag does NOT make anything in-cluster listen on TLS. It only picks
+  # the scheme in the computed frontend URL (charts/securo/templates/
+  # _helpers.tpl "securo.frontendUrl"), which becomes FRONTEND_URL and the
+  # OAuth redirect URIs derived from it.
+  #
+  # The `local` listener on the `homelab` Gateway (namespace gateway-system)
+  # really is plain HTTP:8080 — but that is the internal hop. Caddy on CT 103
+  # terminates TLS for *.local.luqmanlabs.com and proxies plain HTTP inward,
+  # so the scheme the BROWSER uses is https. Both are true at once, and this
+  # flag belongs to the browser's view.
+  #
+  # It must be true. `frontend_url` is the sole entry in the backend's CORS
+  # allow_origins (backend/app/main.py), so an http value while the browser is
+  # on https blocks every API call the UI makes — the app deploys, reports
+  # Healthy, and is unusable. worth sets its own bank redirect URL to https
+  # behind this identical HTTP listener, which is the precedent.
+  tls: true
   # SECRET_KEY ALONE comes from this Secret. DATABASE_URL and
   # OPENEXCHANGERATES_APP_ID live in securo-postgres and
   # securo-openexchangerates, attached by deploy/kustomization.yaml patches --

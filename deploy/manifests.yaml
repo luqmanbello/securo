@@ -26,9 +26,9 @@ metadata:
     app.kubernetes.io/version: "0.14.4"
     app.kubernetes.io/managed-by: Helm
 data:
-  FRONTEND_URL: "http://securo.local.luqmanlabs.com"
-  PLUGGY_OAUTH_REDIRECT_URI: "http://securo.local.luqmanlabs.com/oauth/callback"
-  ENABLE_BANKING_OAUTH_REDIRECT_URI: "http://securo.local.luqmanlabs.com/oauth/callback"
+  FRONTEND_URL: "https://securo.local.luqmanlabs.com"
+  PLUGGY_OAUTH_REDIRECT_URI: "https://securo.local.luqmanlabs.com/oauth/callback"
+  ENABLE_BANKING_OAUTH_REDIRECT_URI: "https://securo.local.luqmanlabs.com/oauth/callback"
   ACCESSBANK_ENABLED: "true"
   ACCESSBANK_IMPORT_CURRENCIES: "USD"
   AGENTS_BUILTIN_MCP_URL: "http://securo-mcp-server:8765/mcp"
@@ -37,7 +37,7 @@ data:
   AGENTS_EMBEDDING_MODEL: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
   AGENTS_EMBEDDING_PROVIDER: "native"
   AGENTS_ENABLED: "false"
-  AGENTS_EXTERNAL_MCP_URL: "http://securo.local.luqmanlabs.com/mcp"
+  AGENTS_EXTERNAL_MCP_URL: "https://securo.local.luqmanlabs.com/mcp"
   AGENTS_EXTRA_MCP_SERVERS: ""
   AGENTS_KNOWLEDGE_STORAGE_PATH: "/app/data/agent_knowledge"
   AGENTS_MCP_EXTERNAL_TTL_DAYS: "90"
@@ -251,7 +251,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 5e6d024d3e4d09f8fa3df7479f9170a54ec5ebbf156a98ec22265eceb347bcc0
+        checksum/config: f49e9d2a155158c269d8c6b478944284eaeabb00cd84e9fa344190c628c7ad42
       labels:
         app.kubernetes.io/name: securo
         app.kubernetes.io/instance: securo
@@ -327,7 +327,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 5e6d024d3e4d09f8fa3df7479f9170a54ec5ebbf156a98ec22265eceb347bcc0
+        checksum/config: f49e9d2a155158c269d8c6b478944284eaeabb00cd84e9fa344190c628c7ad42
       labels:
         app.kubernetes.io/name: securo
         app.kubernetes.io/instance: securo
@@ -396,7 +396,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 5e6d024d3e4d09f8fa3df7479f9170a54ec5ebbf156a98ec22265eceb347bcc0
+        checksum/config: f49e9d2a155158c269d8c6b478944284eaeabb00cd84e9fa344190c628c7ad42
       labels:
         app.kubernetes.io/name: securo
         app.kubernetes.io/instance: securo
@@ -426,7 +426,7 @@ spec:
             - name: BACKEND_URL
               value: "http://securo-backend:8000"
             - name: FRONTEND_URL
-              value: "http://securo.local.luqmanlabs.com"
+              value: "https://securo.local.luqmanlabs.com"
           volumeMounts:
             - name: nginx-template
               mountPath: /etc/nginx/templates/default.conf.template
@@ -466,7 +466,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 5e6d024d3e4d09f8fa3df7479f9170a54ec5ebbf156a98ec22265eceb347bcc0
+        checksum/config: f49e9d2a155158c269d8c6b478944284eaeabb00cd84e9fa344190c628c7ad42
       labels:
         app.kubernetes.io/name: securo
         app.kubernetes.io/instance: securo
