@@ -1,0 +1,695 @@
+---
+# Source: securo/templates/common/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: securo
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+automountServiceAccountToken: 
+
+
+---
+# Source: securo/templates/common/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: securo-config
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+data:
+  FRONTEND_URL: "http://securo.local.luqmanlabs.com"
+  PLUGGY_OAUTH_REDIRECT_URI: "http://securo.local.luqmanlabs.com/oauth/callback"
+  ENABLE_BANKING_OAUTH_REDIRECT_URI: "http://securo.local.luqmanlabs.com/oauth/callback"
+  ACCESSBANK_ENABLED: "true"
+  ACCESSBANK_IMPORT_CURRENCIES: "USD"
+  AGENTS_BUILTIN_MCP_URL: "http://securo-mcp-server:8765/mcp"
+  AGENTS_DEFAULT_MODEL: ""
+  AGENTS_DEFAULT_PROVIDER: "ollama"
+  AGENTS_EMBEDDING_MODEL: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+  AGENTS_EMBEDDING_PROVIDER: "native"
+  AGENTS_ENABLED: "false"
+  AGENTS_EXTERNAL_MCP_URL: "http://securo.local.luqmanlabs.com/mcp"
+  AGENTS_EXTRA_MCP_SERVERS: ""
+  AGENTS_KNOWLEDGE_STORAGE_PATH: "/app/data/agent_knowledge"
+  AGENTS_MCP_EXTERNAL_TTL_DAYS: "90"
+  AGENTS_OLLAMA_BASE_URL: "http://ollama:11434"
+  AGENTS_OPENAI_COMPAT_BASE_URL: ""
+  CELERY_BROKER_URL: "redis://securo-redis-master:6379/0"
+  CELERY_RESULT_BACKEND: "redis://securo-redis-master:6379/0"
+  DEBUG: "false"
+  ENABLE_BANKING_API_URL: "https://api.enablebanking.com"
+  FX_SYNC_MODE: "on_demand"
+  LOCAL_AUTH_ENABLED: "true"
+  OIDC_ADMIN_ROLES: ""
+  OIDC_AUTO_REGISTER: "true"
+  OIDC_DISCOVERY_URL: ""
+  OIDC_ENABLED: "false"
+  OIDC_EXISTING_USER_LINK_MODE: "disabled"
+  OIDC_PROVIDER_NAME: "OIDC"
+  OIDC_REDIRECT_URI: ""
+  OIDC_REQUIRE_VERIFIED_EMAIL: "true"
+  OIDC_ROLES_CLAIM: "groups"
+  OIDC_SCOPES: "openid email profile"
+  OIDC_SYNC_ROLES: "false"
+  OIDC_WORKSPACE_ROLE_MAP: ""
+  REDIS_URL: "redis://securo-redis-master:6379/0"
+  SIMPLEFIN_API_URL: "https://beta-bridge.simplefin.org"
+  SIMPLEFIN_ENABLED: "false"
+  STORAGE_LOCAL_PATH: "/app/data/attachments"
+  SUPPORTED_CURRENCIES: "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,RUB,GTQ,PHP,UAH,NZD,VND,SGD,NGN"
+  TESOURO_DIRETO_ENABLED: "true"
+
+---
+# Source: securo/templates/frontend/configmap-nginx.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: securo-frontend-nginx
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: frontend
+data:
+  default.conf.template: |
+    server {
+        listen 8080;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # API proxy to backend.
+        location /api/ {
+            proxy_pass ${BACKEND_URL};
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Never cache index.html so new deployments are always picked up immediately
+        location = /index.html {
+            add_header Cache-Control "no-store, no-cache, must-revalidate";
+            try_files $uri =404;
+        }
+
+        # SPA fallback — serve index.html for all non-file routes
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
+
+---
+# Source: securo/templates/common/pvc-attachments.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: securo-attachments
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "5Gi"
+
+---
+# Source: securo/templates/backend/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: securo-backend
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/component: backend
+
+---
+# Source: securo/templates/frontend/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: securo-frontend
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: frontend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/component: frontend
+
+---
+# Source: securo/templates/postgresql/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: securo-postgresql
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: postgresql
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: tcp-postgresql
+      protocol: TCP
+      name: tcp-postgresql
+  selector:
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/component: postgresql
+
+---
+# Source: securo/templates/redis/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: securo-redis-master
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: tcp-redis
+      protocol: TCP
+      name: tcp-redis
+  selector:
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/component: redis
+
+---
+# Source: securo/templates/backend/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: securo-backend
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/instance: securo
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      annotations:
+        checksum/config: 5e6d024d3e4d09f8fa3df7479f9170a54ec5ebbf156a98ec22265eceb347bcc0
+      labels:
+        app.kubernetes.io/name: securo
+        app.kubernetes.io/instance: securo
+        app.kubernetes.io/component: backend
+    spec:
+      containers:
+        - name: backend
+          image: "ghcr.io/luqmanbello/securo-backend:unset"
+          imagePullPolicy: IfNotPresent
+          command:
+            - uvicorn
+            - app.main:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          envFrom:
+            - configMapRef:
+                name: securo-config
+            - secretRef:
+                name: securo-runtime
+          volumeMounts:
+            - name: attachments
+              mountPath: /app/data/attachments
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+      volumes:
+        - name: attachments
+          persistentVolumeClaim:
+            claimName: securo-attachments
+
+---
+# Source: securo/templates/beat/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: securo-beat
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: celery-beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/instance: securo
+      app.kubernetes.io/component: celery-beat
+  template:
+    metadata:
+      annotations:
+        checksum/config: 5e6d024d3e4d09f8fa3df7479f9170a54ec5ebbf156a98ec22265eceb347bcc0
+      labels:
+        app.kubernetes.io/name: securo
+        app.kubernetes.io/instance: securo
+        app.kubernetes.io/component: celery-beat
+    spec:
+      containers:
+        - name: celery-beat
+          image: "ghcr.io/luqmanbello/securo-backend:unset"
+          imagePullPolicy: IfNotPresent
+          command:
+            - celery
+            - -A
+            - app.worker
+            - beat
+            - --loglevel=info
+          envFrom:
+            - configMapRef:
+                name: securo-config
+            - secretRef:
+                name: securo-runtime
+          volumeMounts:
+            - name: attachments
+              mountPath: /app/data/attachments
+            - name: agent-knowledge
+              mountPath: /app/data/agent_knowledge
+            - name: agent-embedding-models
+              mountPath: /app/data/embedding_models
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+      volumes:
+        - name: attachments
+          persistentVolumeClaim:
+            claimName: securo-attachments
+        - name: agent-knowledge
+          persistentVolumeClaim:
+            claimName: securo-agent-knowledge
+        - name: agent-embedding-models
+          persistentVolumeClaim:
+            claimName: securo-agent-embedding-models
+
+---
+# Source: securo/templates/frontend/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: securo-frontend
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/instance: securo
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      annotations:
+        checksum/config: 5e6d024d3e4d09f8fa3df7479f9170a54ec5ebbf156a98ec22265eceb347bcc0
+      labels:
+        app.kubernetes.io/name: securo
+        app.kubernetes.io/instance: securo
+        app.kubernetes.io/component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: "ghcr.io/luqmanbello/securo-frontend:unset"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          env:
+            - name: BACKEND_URL
+              value: "http://securo-backend:8000"
+            - name: FRONTEND_URL
+              value: "http://securo.local.luqmanlabs.com"
+          volumeMounts:
+            - name: nginx-template
+              mountPath: /etc/nginx/templates/default.conf.template
+              subPath: default.conf.template
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+      volumes:
+        - name: nginx-template
+          configMap:
+            name: securo-frontend-nginx
+
+---
+# Source: securo/templates/worker/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: securo-worker
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: celery-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/instance: securo
+      app.kubernetes.io/component: celery-worker
+  template:
+    metadata:
+      annotations:
+        checksum/config: 5e6d024d3e4d09f8fa3df7479f9170a54ec5ebbf156a98ec22265eceb347bcc0
+      labels:
+        app.kubernetes.io/name: securo
+        app.kubernetes.io/instance: securo
+        app.kubernetes.io/component: celery-worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: "ghcr.io/luqmanbello/securo-backend:unset"
+          imagePullPolicy: IfNotPresent
+          command:
+            - celery
+            - -A
+            - app.worker
+            - worker
+            - --loglevel=info
+            - --concurrency=2
+          envFrom:
+            - configMapRef:
+                name: securo-config
+            - secretRef:
+                name: securo-runtime
+          volumeMounts:
+            - name: attachments
+              mountPath: /app/data/attachments
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+      volumes:
+        - name: attachments
+          persistentVolumeClaim:
+            claimName: securo-attachments
+
+---
+# Source: securo/templates/postgresql/statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: securo-postgresql
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: postgresql
+spec:
+  serviceName: securo-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/instance: securo
+      app.kubernetes.io/component: postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: securo
+        app.kubernetes.io/instance: securo
+        app.kubernetes.io/component: postgresql
+    spec:
+      containers:
+        - name: postgresql
+          image: "docker.io/pgvector/pgvector:pg16"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: tcp-postgresql
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: postgres
+            - name: POSTGRES_DB
+              value: securo
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 8Gi
+
+---
+# Source: securo/templates/redis/statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: securo-redis-master
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: redis
+spec:
+  serviceName: securo-redis-master
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/instance: securo
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: securo
+        app.kubernetes.io/instance: securo
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: "docker.io/library/redis:8-alpine"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: tcp-redis
+              containerPort: 6379
+              protocol: TCP
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 2Gi
+
+---
+# Source: securo/templates/common/httproute.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: securo
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  parentRefs:
+    - name: homelab
+      namespace: gateway-system
+      sectionName: local
+  hostnames:
+    - "securo.local.luqmanlabs.com"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: securo-frontend
+          port: 3000
+---
+# Source: securo/templates/backend/job-migration.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: securo-migration
+  labels:
+    helm.sh/chart: securo-0.14.4
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/instance: securo
+    app.kubernetes.io/version: "0.14.4"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: migration
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: securo
+        app.kubernetes.io/instance: securo
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migration
+          image: "ghcr.io/luqmanbello/securo-backend:unset"
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              echo "Starting database migration..."
+              for i in $(seq 1 30); do
+                if alembic upgrade head; then
+                  echo "Migration successful."
+                  exit 0
+                fi
+                echo "Migration failed (database might not be ready). Retrying in 5 seconds..."
+                sleep 5
+              done
+              echo "Migration failed after multiple retries."
+              exit 1
+          envFrom:
+            - configMapRef:
+                name: securo-config
+            - secretRef:
+                name: securo-runtime
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+

@@ -1,0 +1,114 @@
+# Values used to render deploy/*.yaml from charts/securo. GENERATED INPUT,
+# not a live Helm values file for `helm install` -- see deploy/README.md for
+# what regenerates it and how. Render with:
+#
+#   helm template securo charts/securo -f deploy/values.yaml \
+#     --namespace securo --skip-tests
+#
+# The release name "securo" matters: charts/securo/templates/_helpers.tpl
+# collapses `securo.fullname` to the release name whenever it already
+# contains the chart name, so resources come out named `securo`,
+# `securo-backend`, `securo-postgresql`, etc. -- exactly what
+# deploy/ciliumnetworkpolicy.yaml and the DATABASE_URL in the securo-postgres
+# Secret both assume. A different release name produces different resource
+# names and breaks both.
+
+global:
+  # Local-only hostname, like argocd/hubble/worth: no legacy
+  # *.luqmanlabs.com name for a service that never leaves the local network.
+  domain: securo.local.luqmanlabs.com
+  # NOTE (unverified from here): if the "local" Gateway listener that
+  # httpRoute.parentRefs targets terminates TLS, this should be `true` --
+  # it flips FRONTEND_URL (and the OIDC/Pluggy/Enable-Banking redirect URIs
+  # the backend derives from it) to https://. Left false to match worth's
+  # plain-HTTP-behind-the-gateway pattern; confirm against the homelab
+  # gateway config before relying on it either way.
+  tls: false
+  # SECRET_KEY ALONE comes from this Secret. DATABASE_URL and
+  # OPENEXCHANGERATES_APP_ID live in securo-postgres and
+  # securo-openexchangerates, attached by deploy/kustomization.yaml patches --
+  # see deploy/README.md "Secrets" for why they are separate objects (the
+  # three have incompatible rotation costs, and SECRET_KEY must never change).
+  #
+  # Setting this disables charts/securo/templates/common/secret.yaml entirely,
+  # which is why the other two need patching in at all: the chart offers only
+  # this single knob. The patches append to the envFrom list the chart already
+  # renders -- no chart feature invented, this is exactly how
+  # templates/backend/deployment.yaml (and worker's, beat's and the migration
+  # Job's) already branch.
+  existingSecret: securo-runtime
+
+# No `secret:` block here on purpose. It is only ever consumed by
+# templates/common/secret.yaml, which global.existingSecret above disables
+# outright -- setting secret.secretKey or secret.openexchangeratesAppId in
+# this file would render nothing and silently look like it did something.
+# The dev literals in charts/securo/values.yaml stay put and inert.
+
+config:
+  # Access Bank (Nigeria) read-only balance/transaction import (ADR/issue
+  # tracked in backend/app/providers/accessbank.py). Off by default in the
+  # chart; on here because this fork exists to carry that provider.
+  accessbankEnabled: "true"
+  # Import every currency EXCEPT what's left off this list on every sync.
+  # USD only, matching the owner's decision recorded next to the field in
+  # backend/app/core/config.py: naira is tracked by hand, not auto-imported.
+  accessbankImportCurrencies: "USD"
+  # Pinned explicitly rather than left to the backend's own default so a
+  # future upstream change to backend/app/core/config.py can't silently
+  # change which currencies this deployment supports. Copied verbatim from
+  # Settings.supported_currencies as of this commit -- it already includes
+  # NGN, which is why this fork exists.
+  supportedCurrencies: "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,RUB,GTQ,PHP,UAH,NZD,VND,SGD,NGN"
+
+backend:
+  image:
+    repository: ghcr.io/luqmanbello/securo-backend
+    # Always overwritten by the `deploy` job in .github/workflows/release.yml
+    # with `@sha256:<digest>`, never a tag (see deploy/README.md). This
+    # value exists only so `helm template` has something syntactically
+    # valid to render locally; it must never survive into a rendered
+    # manifest that reaches Git.
+    tag: unset
+
+frontend:
+  image:
+    repository: ghcr.io/luqmanbello/securo-frontend
+    tag: unset
+
+# Gateway API, not Ingress -- the homelab gateway is Cilium's, and every
+# other local service (worth, argocd, hubble) is routed the same way.
+ingress:
+  enabled: false
+
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: homelab
+      namespace: gateway-system
+      sectionName: local
+  # hostnames come from global.domain above (see
+  # charts/securo/templates/common/httproute.yaml) -- there is no separate
+  # hostname field here.
+
+# The agents/LLM feature (a built-in MCP server exposing this app's data to
+# an LLM agent). Deliberately off: this fork's job is bank connectivity, not
+# agent access to a personal-finance database. A validator asserts no
+# mcp-server Deployment exists in deploy/, so turning this on is meant to be
+# a deliberate, reviewed act, not a chart-upgrade accident.
+mcpServer:
+  enabled: false
+
+# Internal Postgres, not an external database. ReadWriteOnce is already the
+# only option: charts/securo/templates/postgresql/statefulset.yaml hardcodes
+# its volumeClaimTemplate to `accessModes: [ReadWriteOnce]`, 8Gi, and no
+# storageClassName override -- there is no values.yaml knob for storage size
+# or storageClassName on this StatefulSet (unlike persistence.attachments,
+# which does support one). Requesting `local-path`/5Gi here would be a
+# value the chart silently ignores, which is worse than not setting it, so
+# it is NOT set. deploy/README.md documents this as a known chart gap:
+# storage falls to the cluster's default StorageClass, which is local-path
+# on this k3s cluster as far as every sibling app's PVC shows, but that is
+# an assumption carried from worth, not verified against this cluster from
+# here.
+postgresql:
+  enabled: true

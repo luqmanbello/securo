@@ -1,0 +1,163 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: securo
+
+resources:
+  - manifests.yaml
+  - ciliumnetworkpolicy.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/part-of: homelab
+      app.kubernetes.io/managed-by: argocd
+    includeSelectors: true
+
+# charts/securo/templates/backend/job-migration.yaml ships as a Helm hook
+# (`helm.sh/hook: post-install,post-upgrade`), which means nothing once
+# `helm template` has flattened it into manifests.yaml and Argo CD is
+# syncing it as a plain Kustomize-sourced resource -- Argo only interprets
+# `helm.sh/hook` when an Application's source is itself a Helm chart, not a
+# directory it runs Kustomize over.
+#
+# Left alone, that makes the second-ever sync fail outright: batch/v1 Job
+# .spec.template is immutable, so re-applying `securo-migration` with a new
+# image digest errors instead of updating, and the whole sync gets stuck
+# behind it. This patch adds Argo's own Sync-hook annotations so Argo
+# deletes and recreates the Job on every sync instead of trying to patch it
+# in place -- BeforeHookCreation deletes the previous run's Job first, which
+# is what makes the immutable field a non-issue.
+#
+# Separately: neither the chart nor any of its pod templates set
+# imagePullSecrets, and the backend/frontend images this fork builds land in
+# GHCR private by default on their first push (worth's README documents the
+# same fact for ghcr-pull; securo just never had the knob to carry it). The
+# two patches below add `ghcr-pull` to every workload that pulls a
+# ghcr.io/luqmanbello image -- the four Deployments and the migration Job.
+# postgres and redis pull public docker.io images and are StatefulSets, not
+# Deployments, so the unqualified `kind: Deployment` target does not touch
+# them. A referenced-but-missing Secret is harmless (kubelet warns and falls
+# back to an anonymous pull), so this is safe even before ghcr-pull exists
+# in the securo namespace.
+patches:
+  - target:
+      kind: Job
+      name: securo-migration
+    patch: |-
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1hook
+        value: Sync
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1hook-delete-policy
+        value: BeforeHookCreation
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value: [{name: ghcr-pull}]
+  - target:
+      kind: Job
+      name: securo-migration
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value: [{name: ghcr-pull}]
+
+# --- Credential split, per homelab-security's contract -----------------------
+#
+# The chart offers exactly one knob, `global.existingSecret`, and setting it
+# disables the chart's own generated Secret entirely -- so everything the app
+# needs would normally have to live in that single object. It does not, on
+# purpose, and the reason is rotation cost rather than tidiness:
+#
+#   securo-runtime            SECRET_KEY alone. Must NEVER change. It signs
+#                             every session token and derives the Fernet key
+#                             that encrypts the stored bank credential, so
+#                             rotating it forges nothing but does strand the
+#                             credential and force a manual reconnect.
+#   securo-postgres           DATABASE_URL. A routine operation legitimately
+#                             touches this -- a Postgres password rotation, or
+#                             a move to an external database.
+#   securo-openexchangerates  OPENEXCHANGERATES_APP_ID. Free to rotate at will.
+#
+# Keeping the two rotatable credentials out of `securo-runtime` means no
+# routine operation ever has a reason to open the object holding the key that
+# must not change. Under one combined Secret, rotating the cheap FX key means
+# recreating the object that holds the expensive one, and one slip does it
+# silently.
+#
+# The asymmetry below is deliberate, so do not tidy it into uniformity:
+# DATABASE_URL goes to all four consumers INCLUDING the migration Job, which
+# cannot connect without it and fails loudly -- the safe direction. The FX key
+# goes only to the three long-running workloads; the Job has no use for it,
+# and a missing FX key is a safe failure anyway (`openexchangerates_app_id`
+# defaults to "" and conversion simply goes quiet).
+#
+# mcp-server also consumes existingSecret in the chart, but `mcpServer.enabled`
+# is false so it never renders. If it is ever enabled, it needs securo-postgres
+# and does not need the FX key.
+  - target:
+      kind: Deployment
+      name: securo-backend
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-postgres
+  - target:
+      kind: Deployment
+      name: securo-backend
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-openexchangerates
+  - target:
+      kind: Deployment
+      name: securo-beat
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-postgres
+  - target:
+      kind: Deployment
+      name: securo-beat
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-openexchangerates
+  - target:
+      kind: Deployment
+      name: securo-worker
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-postgres
+  - target:
+      kind: Deployment
+      name: securo-worker
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-openexchangerates
+  - target:
+      kind: Job
+      name: securo-migration
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-postgres

@@ -86,3 +86,39 @@ A real connection against the owner's own account, through the UI:
   `user_id` and `password_enc`, with no plaintext `password` key.
 - FX is live: the OXR key resolves NGN at the real rate rather than the 1:1 fallback,
   and the historical endpoint works on this plan, so per-date conversion is real.
+
+## Durability: the backup window is shorter than the data's reach
+
+Recorded 2026-08-25, measured by homelab-security and independently confirmed
+against the backup terraform.
+
+The important numbers, side by side:
+
+- The bank serves a rolling **~90 days** of transaction history. Anything older
+  cannot be re-fetched at any price.
+- The nightly archive retains roughly **2 days** (a 1-day object expiration plus
+  a 1-day noncurrent tail on a versioned bucket).
+- The volume class is `local-path` with `reclaimPolicy: Delete`, so deleting the
+  PVC deletes the data. There is no orphaned volume to recover from.
+
+An earlier note claimed PVCs were not backed up at all. That was wrong — they
+are, because they live on the node's disk and the whole VM is imaged nightly.
+The real constraint is **retention, not existence**, which is a different and
+sharper problem: lose the volume on a Wednesday, notice on Friday, and the
+history is gone permanently.
+
+**This gets worse the longer the app is used, which is the part worth stating
+plainly.** In the first three months, losing the volume costs a reconnect and a
+re-import — the bank still holds everything. After a year it costs nine months
+that no longer exist anywhere. The exposure grows every day the app runs, and
+nothing about the system signals that.
+
+Not solved here, and not this repository's lane to solve. Options, roughly in
+increasing cost: accept it and re-import the 90 days; lengthen the archive
+retention; or add an application-level dump on its own schedule to a separate
+volume — which is the pattern Paperless already uses in this estate for exactly
+this reason, and is therefore the least novel answer available.
+
+Worth knowing: securo has its own workspace-backup feature, including
+password-encrypted exports. That may be the cheapest path to a second copy that
+does not depend on the VM image at all.

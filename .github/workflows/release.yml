@@ -15,6 +15,8 @@ permissions:
 jobs:
   build-backend:
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -42,6 +44,7 @@ jobs:
         uses: docker/setup-qemu-action@v4
 
       - name: Build and push backend image
+        id: push
         uses: docker/build-push-action@v7
         with:
           context: ./backend
@@ -55,6 +58,8 @@ jobs:
 
   build-frontend:
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -82,6 +87,7 @@ jobs:
         uses: docker/setup-qemu-action@v4
 
       - name: Build and push frontend image
+        id: push
         uses: docker/build-push-action@v7
         with:
           context: ./frontend
@@ -94,6 +100,175 @@ jobs:
             VITE_APP_VERSION=${{ github.event.release.tag_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Render charts/securo with deploy/values.yaml, pin both images by digest,
+  # and write the result into deploy/manifests.yaml -- the commit that
+  # writes the digest IS the deploy, same pattern as luqmanbello/worth's
+  # deploy.yml (homelab ADR-0140). Argo CD watches deploy/ on main and
+  # applies whatever plain manifests it finds there; it never runs Helm
+  # itself and is never given values, so this job is the only place the
+  # chart and the running cluster are connected.
+  #
+  # Retrigger loop: N/A here, unlike worth. worth's deploy.yml guards with
+  # `paths-ignore: [deploy/**]` because it triggers on `push: branches:
+  # [main]`, so a push touching only deploy/** would otherwise retrigger
+  # itself. This workflow triggers on `release: types: [published]`
+  # instead -- pushing a commit to main does not publish a GitHub Release,
+  # so the write-back below cannot retrigger this workflow no matter what
+  # paths it touches. Separately, and just as sufficient on its own: pushes
+  # made with the default GITHUB_TOKEN never trigger any workflow run at
+  # all. A paths-ignore guard here would be dead code guarding against an
+  # event that can't happen.
+  deploy:
+    needs: [build-backend, build-frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      # Serialize write-backs to main rather than race two releases
+      # published close together. Not ref-based (the ref here is a release
+      # tag, different every time and so useless as a lock key) -- a
+      # constant key is what actually serializes pushes to the same branch.
+      group: securo-deploy-manifests
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          # release-triggered checkouts default to the tag's commit, not a
+          # branch -- the write-back must land on main, not a detached HEAD.
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v4.2.4
+
+      - name: Render deploy/manifests.yaml
+        run: |
+          set -euo pipefail
+          helm template securo charts/securo -f deploy/values.yaml \
+            --namespace securo --skip-tests > deploy/manifests.yaml
+
+      - name: Pin images by digest
+        env:
+          BACKEND_IMAGE: ghcr.io/luqmanbello/securo-backend
+          FRONTEND_IMAGE: ghcr.io/luqmanbello/securo-frontend
+          BACKEND_DIGEST: ${{ needs.build-backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ needs.build-frontend.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$BACKEND_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::build-backend produced no usable digest: '$BACKEND_DIGEST'"
+            exit 1
+          fi
+          if [[ ! "$FRONTEND_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::build-frontend produced no usable digest: '$FRONTEND_DIGEST'"
+            exit 1
+          fi
+
+          # The chart quotes image refs (`image: "repo:tag"`), unlike
+          # worth's hand-written deployment.yaml -- these patterns match
+          # helm template's actual output, not worth's.
+          #
+          # backend's repository+tag is shared by 4 containers: the backend
+          # Deployment, the celery-worker Deployment, the celery-beat
+          # Deployment, and the one-shot migration Job (all four run
+          # `.Values.backend.image.repository`). frontend appears once. A
+          # count that doesn't match either number means the chart's
+          # templates changed shape (a container added/removed, or the
+          # image field's quoting changed) and the sed below would either
+          # silently miss a container or over-match -- fail loudly instead
+          # of shipping a manifest with a stale or half-pinned image.
+          backend_before=$(grep -c "image: \"${BACKEND_IMAGE}:" deploy/manifests.yaml || true)
+          if [[ "$backend_before" -ne 4 ]]; then
+            echo "::error::expected 4 managed ${BACKEND_IMAGE} image lines in deploy/manifests.yaml, found ${backend_before}"
+            exit 1
+          fi
+          frontend_before=$(grep -c "image: \"${FRONTEND_IMAGE}:" deploy/manifests.yaml || true)
+          if [[ "$frontend_before" -ne 1 ]]; then
+            echo "::error::expected 1 managed ${FRONTEND_IMAGE} image line in deploy/manifests.yaml, found ${frontend_before}"
+            exit 1
+          fi
+
+          sed -i -E "s|image: \"${BACKEND_IMAGE}:[^\"]*\"|image: \"${BACKEND_IMAGE}@${BACKEND_DIGEST}\"|" \
+            deploy/manifests.yaml
+          sed -i -E "s|image: \"${FRONTEND_IMAGE}:[^\"]*\"|image: \"${FRONTEND_IMAGE}@${FRONTEND_DIGEST}\"|" \
+            deploy/manifests.yaml
+
+          backend_after=$(grep -c "image: \"${BACKEND_IMAGE}@sha256:" deploy/manifests.yaml || true)
+          if [[ "$backend_after" -ne 4 ]]; then
+            echo "::error::expected 4 digest-pinned ${BACKEND_IMAGE} image lines after substitution, found ${backend_after}"
+            exit 1
+          fi
+          frontend_after=$(grep -c "image: \"${FRONTEND_IMAGE}@sha256:" deploy/manifests.yaml || true)
+          if [[ "$frontend_after" -ne 1 ]]; then
+            echo "::error::expected 1 digest-pinned ${FRONTEND_IMAGE} image line after substitution, found ${frontend_after}"
+            exit 1
+          fi
+
+          # No image this fork's Argo CD app should ever run by tag: a
+          # validator elsewhere fails the deploy if any
+          # ghcr.io/luqmanbello/securo- image lacks @sha256:, so catch the
+          # same condition here first, before it's a commit.
+          if grep -n "ghcr.io/luqmanbello/securo-[a-z]*:" deploy/manifests.yaml; then
+            echo "::error::a ghcr.io/luqmanbello/securo- image above is still pinned by tag, not digest."
+            exit 1
+          fi
+
+          # Upstream's images must never survive into what Argo CD applies:
+          # they pull, come up Healthy, and contain none of this fork's code
+          # (no Access Bank provider, no NGN currency).
+          if grep -n "ghcr.io/securo-finance/" deploy/manifests.yaml; then
+            echo "::error::deploy/manifests.yaml still references an upstream ghcr.io/securo-finance/ image."
+            exit 1
+          fi
+
+          # mcpServer.enabled is false in deploy/values.yaml by deliberate
+          # choice (agents/LLM feature, off). Its arrival must be a reviewed
+          # change to that file, never a side effect of a chart bump that
+          # quietly changes a default.
+          if grep -n "component: mcp-server" deploy/manifests.yaml; then
+            echo "::error::deploy/manifests.yaml contains an mcp-server resource; mcpServer.enabled must stay false."
+            exit 1
+          fi
+
+      - name: Commit and push
+        env:
+          BACKEND_DIGEST: ${{ needs.build-backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ needs.build-frontend.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- deploy/manifests.yaml; then
+            echo "rendered manifests unchanged; nothing to promote"
+            exit 0
+          fi
+
+          backend_short="${BACKEND_DIGEST#sha256:}"
+          backend_short="${backend_short:0:12}"
+          frontend_short="${FRONTEND_DIGEST#sha256:}"
+          frontend_short="${frontend_short:0:12}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/manifests.yaml
+          git commit -m "deploy: backend@${backend_short} frontend@${frontend_short}"
+
+          # Rebase-and-retry, never force: main has other writers, and
+          # worth's deploy.yml records the first homelab digest write-back
+          # losing exactly this race.
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin main
+            git rebase origin/main
+          done
+          echo "::error::could not push the rendered manifests after 3 rebases"
+          exit 1
 
   build-helm:
     needs: [build-backend, build-frontend]
