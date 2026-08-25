@@ -1,0 +1,326 @@
+# securo carries bank credentials (Access Bank) and an FX API key; before
+# this policy its egress was the whole internet plus every pod in the
+# cluster, and its ingress was reachable from anywhere in-cluster.
+#
+# A CiliumNetworkPolicy rather than a plain NetworkPolicy, learned the hard
+# way on worth (homelab issue #72): the Cilium Gateway is host-network Envoy
+# whose traffic carries the reserved `ingress` identity, which an ipBlock
+# rule never matches -- a plain NetworkPolicy 503'd the gateway while
+# kubelet probes (always allowed by Cilium) kept the pod Healthy, so nothing
+# in the health checks caught it. `fromEntities` speaks the identity model
+# the datapath actually uses.
+#
+# UNLIKE worth (one pod, one policy), securo is six workloads that must talk
+# to each other: frontend -> backend, backend -> postgres, backend -> redis,
+# celery-worker -> postgres, celery-worker -> redis, celery-beat -> redis,
+# plus a one-shot migration Job -> postgres. This file is one
+# CiliumNetworkPolicy per workload rather than one namespace-wide policy so
+# each ingress/egress rule can be scoped to the peer that actually needs it
+# ("prefer selecting by namespace [and pod label] over allowing everything")
+# and so each rule's comment stays next to the workload it justifies.
+
+---
+# frontend: the only workload the HTTPRoute targets (see
+# charts/securo/templates/common/httproute.yaml -- it routes / to the
+# frontend Service; /mcp is never added because mcpServer.enabled is false).
+# Its nginx reverse-proxies API calls to the backend Service internally, so
+# it also needs egress to backend.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: securo-frontend
+  namespace: securo
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/component: frontend
+  ingress:
+    # The Gateway's Envoy (`ingress`) for real traffic, and the node itself
+    # (`host`) for kubelet's liveness/readiness probes against the pod IP,
+    # which bypass the Service. Port 8080 is the pod's containerPort -- the
+    # frontend Service listens on 3000 but forwards to the pod on 8080, and
+    # Cilium enforces at the pod, not the Service.
+    - fromEntities:
+        - ingress
+        - host
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    # Cluster DNS, or the backend Service name never resolves.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # nginx's reverse proxy to the backend API (BACKEND_URL in
+    # templates/frontend/deployment.yaml). No other in-namespace peer, and
+    # no internet egress: the frontend serves static assets and proxies,
+    # it never calls a bank or FX API itself.
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: backend
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+
+---
+# backend: reached only from the frontend's reverse proxy (never directly by
+# the Gateway -- the HTTPRoute has no rule pointing at it), so no `ingress`
+# entity here. `host` is still needed: the Deployment defines its own
+# liveness/readiness probes on port 8000, which kubelet hits directly.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: securo-backend
+  namespace: securo
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/component: backend
+  ingress:
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: frontend
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Its own database and broker/result-backend.
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: postgresql
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: redis
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+    # On-demand FX lookups (config.fxSyncMode="on_demand" hits
+    # openexchangerates.org synchronously from a user request) and asset
+    # price search (backend/app/services/asset_service.py calls Yahoo
+    # Finance directly when a user searches a ticker, not just from the
+    # scheduled celery task). RFC1918 excluded so a stolen bank credential
+    # cannot be used to pivot sideways into the LAN -- everything this pod
+    # may dial outside the cluster is public HTTPS.
+    - toCIDRSet:
+        - cidr: 0.0.0.0/0
+          except:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+
+---
+# celery-worker: no Service, never reached by anything -- ingress is
+# intentionally empty. It runs the scheduled and dispatched tasks: FX sync
+# (the OPENEXCHANGERATES_APP_ID key is read here per ADR), Access Bank
+# import, and asset price refresh, so it needs the same database, broker,
+# and internet egress as the backend.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: securo-worker
+  namespace: securo
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/component: celery-worker
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: postgresql
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: redis
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+    # The bank (Access Bank, on scheduled/triggered import), OpenExchangeRates
+    # (scheduled FX sync), and Yahoo Finance (scheduled price refresh) --
+    # same reasoning and same RFC1918 exclusion as the backend's egress rule.
+    - toCIDRSet:
+        - cidr: 0.0.0.0/0
+          except:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+
+---
+# celery-beat: the scheduler only. It writes task messages onto the redis
+# broker for celery-worker to pick up; it never executes a task itself, so
+# it never calls postgres or the internet. No Service, no ingress.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: securo-beat
+  namespace: securo
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/component: celery-beat
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: redis
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+
+---
+# postgresql: reached by backend, celery-worker, and the one-shot
+# `securo-migration` Job (helm.sh/hook annotations on that Job mean nothing
+# once rendered to plain YAML for Argo/kustomize -- see
+# deploy/kustomization.yaml's patch -- but it still runs `alembic upgrade
+# head` against this database on every sync). No `host` entity: the
+# StatefulSet defines no liveness/readiness probe.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: securo-postgresql
+  namespace: securo
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/component: postgresql
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: backend
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: celery-worker
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: migration
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  egress:
+    # DNS only: postgres never initiates an outbound connection of its own.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+---
+# redis: broker and result backend for backend, celery-worker, and
+# celery-beat. No `host` entity: no probe defined on this StatefulSet either.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: securo-redis
+  namespace: securo
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/component: redis
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: backend
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: celery-worker
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: celery-beat
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
