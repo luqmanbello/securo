@@ -64,7 +64,9 @@ and `paperless-runtime`. No generated Secret manifest enters Git.
 
 | Secret | Keys | Consumed by |
 |---|---|---|
-| `securo-runtime` (namespace `securo`) | `SECRET_KEY`, `OPENEXCHANGERATES_APP_ID`, `DATABASE_URL` | backend, celery-worker, celery-beat (all three `envFrom: secretRef` this one Secret) |
+| `securo-runtime` (namespace `securo`) | `SECRET_KEY` — nothing else | backend, celery-worker, celery-beat, migration Job |
+| `securo-postgres` (namespace `securo`) | `DATABASE_URL` | backend, celery-worker, celery-beat, migration Job |
+| `securo-openexchangerates` (namespace `securo`) | `OPENEXCHANGERATES_APP_ID` | backend, celery-worker, celery-beat — deliberately NOT the migration Job |
 | `ghcr-pull` (namespace `securo`) | (docker-registry secret) | every workload that pulls a `ghcr.io/luqmanbello/securo-*` image — the four Deployments and the migration Job, via `imagePullSecrets` added by `deploy/kustomization.yaml`'s patches (the chart has no `imagePullSecrets` knob at all) |
 
 `ghcr-pull` follows the same reasoning as worth's row of the same name: the
@@ -79,26 +81,61 @@ generated Secret) entirely — backend, worker, and beat all read from
 branch the chart already has in each of their Deployments (and in the
 migration Job). No chart feature was invented to make this work.
 
-**Because the generated Secret is disabled outright, `securo-runtime` must
-carry all three keys, not just the two that are actually secret-shaped.**
-`DATABASE_URL` looks like plain configuration, but it only exists in the
-chart as `secret.databaseUrl` — with no existing Secret, missing it means
-the backend falls back to its own default
-(`postgresql+asyncpg://postgres:postgres@localhost:5432/securo`) and
-CrashLoops. With the release name `securo` (see above), the value that
-must go in this Secret is:
+**Three objects, not one, and the split is about rotation cost.** The chart
+offers a single `global.existingSecret` knob, and setting it disables the
+chart's own generated Secret entirely — so by default everything would have to
+live in one object. `deploy/kustomization.yaml` patches a second and third
+`secretRef` onto the consumers instead, using the same `envFrom` list the
+chart already renders. No chart feature was invented.
 
-```
-postgresql+asyncpg://postgres:postgres@securo-postgresql:5432/securo
-```
+The reason is that these three credentials have incompatible rotation stories:
+
+- `SECRET_KEY` must **never** change. It signs every session token and derives
+  the Fernet key that encrypts the stored bank credential, so rotating it
+  strands that credential and forces a manual reconnect through the UI.
+- `DATABASE_URL` is touched by routine operations — a Postgres password
+  rotation, or a move to an external database.
+- `OPENEXCHANGERATES_APP_ID` is free to rotate whenever.
+
+Under one combined Secret, rotating the cheap FX key means recreating the
+object holding the key that must not change, and one slip does it silently.
+Separate objects mean no routine operation has any reason to open
+`securo-runtime` at all.
+
+**The asymmetry is deliberate — do not tidy it into uniformity.**
+`DATABASE_URL` reaches all four consumers including the migration Job, which
+cannot connect without it and fails loudly; that is the safe direction. The FX
+key reaches only the three long-running workloads, because the Job has no use
+for it and a missing FX key is a safe failure anyway
+(`openexchangerates_app_id` defaults to `""` and conversion goes quiet).
+
+`DATABASE_URL` looks like plain configuration, but the chart only exposes it as
+`secret.databaseUrl`. With no value supplied the backend falls back to its own
+default (`postgresql+asyncpg://postgres:postgres@localhost:5432/securo`) and
+CrashLoops — loud, which is what we want.
 
 ```sh
+# SECRET_KEY: mint once, before the bank is first connected, and never again.
+# At least 256 bits from a CSPRNG. The salt in crypto.py is a constant, so the
+# derived key's entropy is exactly this value's entropy and nothing else.
 kubectl create secret generic securo-runtime -n securo \
-  --from-literal=SECRET_KEY="$(openssl rand -hex 32)" \
-  --from-literal=OPENEXCHANGERATES_APP_ID="<app id from openexchangerates.org>" \
+  --from-literal=SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(64))')" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic securo-postgres -n securo \
   --from-literal=DATABASE_URL="postgresql+asyncpg://postgres:postgres@securo-postgresql:5432/securo" \
   --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic securo-openexchangerates -n securo \
+  --from-literal=OPENEXCHANGERATES_APP_ID="<App ID from the vault item>" \
+  --dry-run=client -o yaml | kubectl apply -f -
 ```
+
+The app refuses to start if `SECRET_KEY` is a known placeholder or shorter than
+32 characters (`backend/app/main.py`). That guard exists because the failure it
+prevents is invisible: the chart's own default is a published string, the pods
+come up Healthy, and the only symptom is that sessions are forgeable and the
+encryption was never real.
 
 The backend, celery-worker, and celery-beat Deployments all run the same
 image and read the same `Settings` object (`backend/app/core/config.py`),

@@ -64,3 +64,100 @@ patches:
       - op: add
         path: /spec/template/spec/imagePullSecrets
         value: [{name: ghcr-pull}]
+
+# --- Credential split, per homelab-security's contract -----------------------
+#
+# The chart offers exactly one knob, `global.existingSecret`, and setting it
+# disables the chart's own generated Secret entirely -- so everything the app
+# needs would normally have to live in that single object. It does not, on
+# purpose, and the reason is rotation cost rather than tidiness:
+#
+#   securo-runtime            SECRET_KEY alone. Must NEVER change. It signs
+#                             every session token and derives the Fernet key
+#                             that encrypts the stored bank credential, so
+#                             rotating it forges nothing but does strand the
+#                             credential and force a manual reconnect.
+#   securo-postgres           DATABASE_URL. A routine operation legitimately
+#                             touches this -- a Postgres password rotation, or
+#                             a move to an external database.
+#   securo-openexchangerates  OPENEXCHANGERATES_APP_ID. Free to rotate at will.
+#
+# Keeping the two rotatable credentials out of `securo-runtime` means no
+# routine operation ever has a reason to open the object holding the key that
+# must not change. Under one combined Secret, rotating the cheap FX key means
+# recreating the object that holds the expensive one, and one slip does it
+# silently.
+#
+# The asymmetry below is deliberate, so do not tidy it into uniformity:
+# DATABASE_URL goes to all four consumers INCLUDING the migration Job, which
+# cannot connect without it and fails loudly -- the safe direction. The FX key
+# goes only to the three long-running workloads; the Job has no use for it,
+# and a missing FX key is a safe failure anyway (`openexchangerates_app_id`
+# defaults to "" and conversion simply goes quiet).
+#
+# mcp-server also consumes existingSecret in the chart, but `mcpServer.enabled`
+# is false so it never renders. If it is ever enabled, it needs securo-postgres
+# and does not need the FX key.
+  - target:
+      kind: Deployment
+      name: securo-backend
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-postgres
+  - target:
+      kind: Deployment
+      name: securo-backend
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-openexchangerates
+  - target:
+      kind: Deployment
+      name: securo-beat
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-postgres
+  - target:
+      kind: Deployment
+      name: securo-beat
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-openexchangerates
+  - target:
+      kind: Deployment
+      name: securo-worker
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-postgres
+  - target:
+      kind: Deployment
+      name: securo-worker
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-openexchangerates
+  - target:
+      kind: Job
+      name: securo-migration
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-postgres
