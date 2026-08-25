@@ -120,12 +120,46 @@ jobs:
           VERSION="${{ github.event.release.tag_name }}"
           VERSION="${VERSION#v}"
 
+          # Point the chart at the images this workflow actually built, which
+          # live under ${{ env.IMAGE_PREFIX }} — the OWNER of the repository
+          # running the release, not a hardcoded one. On a fork the build jobs
+          # already push to the fork's namespace; before this, the chart was
+          # rewritten to upstream's images carrying the fork's version number,
+          # so a fork release produced a chart that deployed upstream's code.
+          # That comes up healthy and is silently wrong, which is worse than
+          # failing.
+          #
+          # home/sources/icon/links deliberately still point upstream: they
+          # describe the PROJECT, which is upstream's. Only artifacthub.io/images
+          # describes what this chart pulls, so only it follows the build.
           echo "Injecting version $VERSION into artifacthub.io/images annotation"
-          sed -i "s|ghcr.io/securo-finance/securo-backend:latest|ghcr.io/securo-finance/securo-backend:${VERSION}|g" charts/securo/Chart.yaml
-          sed -i "s|ghcr.io/securo-finance/securo-frontend:latest|ghcr.io/securo-finance/securo-frontend:${VERSION}|g" charts/securo/Chart.yaml
+          sed -i "s|ghcr.io/securo-finance/securo-backend:latest|${{ env.IMAGE_PREFIX }}/securo-backend:${VERSION}|g" charts/securo/Chart.yaml
+          sed -i "s|ghcr.io/securo-finance/securo-frontend:latest|${{ env.IMAGE_PREFIX }}/securo-frontend:${VERSION}|g" charts/securo/Chart.yaml
 
+          # values.yaml needs BOTH halves rewritten. Rewriting only the tag
+          # leaves repository: pointing at upstream with a fork version tag —
+          # the same wrong-owner bug in a second file, surviving a fix to
+          # Chart.yaml alone. Only the two application images use `tag: latest`
+          # (pgvector is pg16, redis is 8-alpine), so the blanket tag replace
+          # cannot touch the dependencies.
           echo "Injecting version $VERSION into values.yaml"
+          sed -i "s|repository: ghcr.io/securo-finance/securo-|repository: ${{ env.IMAGE_PREFIX }}/securo-|g" charts/securo/values.yaml
           sed -i "s|tag: latest|tag: ${VERSION}|g" charts/securo/values.yaml
+
+          # Fail loudly rather than shipping a chart that points somewhere
+          # unintended. A sed that matches nothing is silent, and every failure
+          # this block guards against is the silently-healthy kind.
+          echo "Verifying no image reference still points at another owner"
+          if grep -rn "ghcr.io/securo-finance/securo-" charts/securo/Chart.yaml charts/securo/values.yaml; then
+            echo "::error::Chart still references ghcr.io/securo-finance images after rewrite."
+            exit 1
+          fi
+          if grep -rn "tag: latest" charts/securo/values.yaml; then
+            echo "::error::values.yaml still contains 'tag: latest' after version injection."
+            exit 1
+          fi
+          echo "Chart image references:"
+          grep -n "repository:\|image: ghcr" charts/securo/Chart.yaml charts/securo/values.yaml
 
           echo "Packaging chart version $VERSION"
           helm package charts/securo --version "$VERSION" --app-version "$VERSION"
