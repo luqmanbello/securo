@@ -29,27 +29,24 @@ labels:
 # in place -- BeforeHookCreation deletes the previous run's Job first, which
 # is what makes the immutable field a non-issue.
 #
-# Separately: neither the chart nor any of its pod templates set
-# imagePullSecrets. The two patches below add `ghcr-pull` to every workload
-# that pulls a ghcr.io/luqmanbello image -- the four Deployments and the
-# migration Job. postgres and redis pull public docker.io images and are
-# StatefulSets, not Deployments, so the unqualified `kind: Deployment` target
-# does not touch them.
+# There are deliberately NO imagePullSecrets here. Both images are public
+# (verified 2026-08-25 by anonymous token pull against ghcr.io: HTTP 200 with
+# no credentials), because packages published by Actions inherit the
+# repository's visibility and luqmanbello/securo is public.
 #
-# CORRECTION 2026-08-25: an earlier version of this comment said the images
-# land in GHCR private on first push. They did NOT. Verified by anonymous
-# token pull against ghcr.io: both securo-backend and securo-frontend return
-# HTTP 200 without credentials. Packages published by Actions inherit the
-# repository's visibility, and luqmanbello/securo is public. The earlier claim
-# came from testing tag `v0.14.4-securo-1`, which does not exist -- the
-# metadata action strips the `v`, so the real tags are `0.14.4-securo-1` and
-# `latest` -- and reading "not found" as "private".
+# An earlier revision patched `ghcr-pull` onto every workload just in case.
+# Removed, because a Secret reference the cluster ignores is not free: kubelet
+# warns on every pull and falls back to an anonymous one, so the namespace
+# carries a standing warning while nothing is wrong — and a warning that is
+# always present is the mechanism by which a real ImagePullBackOff later goes
+# unread. The just-in-case cost is pointed at exactly the failure it was meant
+# to soften.
 #
-# The patches are KEPT deliberately. They are inert while the packages are
-# public (a referenced-but-missing Secret only makes kubelet warn and fall
-# back to an anonymous pull), and if the repository or packages are ever made
-# private this is already in place rather than becoming an ImagePullBackOff
-# with no stated cause.
+# If the repository or its packages are ever made private, that is a deliberate
+# act and this patch belongs with it: add imagePullSecrets [{name: ghcr-pull}]
+# back onto the four Deployments and the migration Job. postgres and redis pull
+# public docker.io images and never need it.
+
 patches:
   - target:
       kind: Job
@@ -61,19 +58,6 @@ patches:
       - op: add
         path: /metadata/annotations/argocd.argoproj.io~1hook-delete-policy
         value: BeforeHookCreation
-  - target:
-      kind: Deployment
-    patch: |-
-      - op: add
-        path: /spec/template/spec/imagePullSecrets
-        value: [{name: ghcr-pull}]
-  - target:
-      kind: Job
-      name: securo-migration
-    patch: |-
-      - op: add
-        path: /spec/template/spec/imagePullSecrets
-        value: [{name: ghcr-pull}]
 
 # --- Credential split, per homelab-security's contract -----------------------
 #

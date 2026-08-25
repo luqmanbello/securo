@@ -67,25 +67,32 @@ and `paperless-runtime`. No generated Secret manifest enters Git.
 | `securo-runtime` (namespace `securo`) | `SECRET_KEY` — nothing else | backend, celery-worker, celery-beat, migration Job |
 | `securo-postgres` (namespace `securo`) | `DATABASE_URL` | backend, celery-worker, celery-beat, migration Job |
 | `securo-openexchangerates` (namespace `securo`) | `OPENEXCHANGERATES_APP_ID` | backend, celery-worker, celery-beat — deliberately NOT the migration Job |
-| `ghcr-pull` (namespace `securo`) | (docker-registry secret) | every workload that pulls a `ghcr.io/luqmanbello/securo-*` image — the four Deployments and the migration Job, via `imagePullSecrets` added by `deploy/kustomization.yaml`'s patches (the chart has no `imagePullSecrets` knob at all) |
 
-**`ghcr-pull` is currently NOT required, and the row above is insurance rather
-than a dependency.** Verified 2026-08-25 by anonymous token pull against
-ghcr.io: both `securo-backend` and `securo-frontend` return HTTP 200 with no
-credentials. Packages published by Actions inherit the repository's visibility,
-and `luqmanbello/securo` is public.
+### Image pull credentials: none needed, and that is deliberate
 
-An earlier version of this section claimed the images land private on first
-push, following worth's row of the same name. That was wrong here, and the
-error is worth recording: the check used tag `v0.14.4-securo-1`, which does not
-exist — `docker/metadata-action` strips the `v`, so the published tags are
-`0.14.4-securo-1` and `latest` — and a "not found" was read as "private".
+Both images are public — verified 2026-08-25 by anonymous token pull against
+ghcr.io, HTTP 200 with no credentials. Packages published by Actions inherit
+the repository's visibility, and `luqmanbello/securo` is public.
 
-The `imagePullSecrets` patches are kept deliberately. They are inert while the
-packages are public (a referenced-but-missing Secret only makes kubelet warn
-and fall back to an anonymous pull), and if the repository or its packages are
-ever made private the manifests already carry it instead of producing an
-`ImagePullBackOff` with no stated cause.
+**If that ever changes, patch `imagePullSecrets: [{name: ghcr-pull}]` back onto
+the four Deployments and the migration Job** in `deploy/kustomization.yaml`.
+`postgres` and `redis` pull public docker.io images and never need it.
+
+An earlier revision carried those patches pre-emptively and they were removed
+on purpose. A Secret reference the cluster ignores is not free: kubelet warns
+on every pull and falls back to an anonymous one, so the namespace carries a
+standing warning while nothing is wrong — and a warning that is always there is
+how a real `ImagePullBackOff` later goes unread. Making the images private
+would be a deliberate act, and the manifest change belongs with it rather than
+installed years in advance where a reader cannot tell whether it is
+load-bearing.
+
+Recording the mistake that produced the earlier version, because the shape of
+it recurs: the first check ran `docker manifest inspect` against tag
+`v0.14.4-securo-1`, which does not exist — `docker/metadata-action` strips the
+`v`, so the published tags are `0.14.4-securo-1` and `latest`. A missing tag
+and an unauthorised pull fail in ways that look alike. List what exists before
+concluding anything from what is absent.
 
 `deploy/values.yaml` sets `global.existingSecret: securo-runtime`, which
 disables `charts/securo/templates/common/secret.yaml` (the chart's own
