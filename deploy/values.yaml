@@ -9,9 +9,9 @@
 # collapses `securo.fullname` to the release name whenever it already
 # contains the chart name, so resources come out named `securo`,
 # `securo-backend`, `securo-postgresql`, etc. -- exactly what
-# deploy/ciliumnetworkpolicy.yaml and this file's own DATABASE_URL below
-# assume. A different release name produces different resource names and
-# breaks both.
+# deploy/ciliumnetworkpolicy.yaml and the DATABASE_URL in the securo-postgres
+# Secret both assume. A different release name produces different resource
+# names and breaks both.
 
 global:
   # Local-only hostname, like argocd/hubble/worth: no legacy
@@ -24,14 +24,18 @@ global:
   # plain-HTTP-behind-the-gateway pattern; confirm against the homelab
   # gateway config before relying on it either way.
   tls: false
-  # Every secret env var (SECRET_KEY, OPENEXCHANGERATES_APP_ID, and
-  # DATABASE_URL -- see deploy/README.md "Secrets") comes from this
-  # pre-provisioned Secret instead of the chart's generated one. Setting
-  # this disables charts/securo/templates/common/secret.yaml entirely, so
-  # backend/worker/beat all read from securo-runtime via the chart's
-  # existing envFrom/secretRef wiring -- no chart feature invented, this is
-  # exactly how templates/backend/deployment.yaml (and worker's and beat's
-  # and the migration Job's) already branch.
+  # SECRET_KEY ALONE comes from this Secret. DATABASE_URL and
+  # OPENEXCHANGERATES_APP_ID live in securo-postgres and
+  # securo-openexchangerates, attached by deploy/kustomization.yaml patches --
+  # see deploy/README.md "Secrets" for why they are separate objects (the
+  # three have incompatible rotation costs, and SECRET_KEY must never change).
+  #
+  # Setting this disables charts/securo/templates/common/secret.yaml entirely,
+  # which is why the other two need patching in at all: the chart offers only
+  # this single knob. The patches append to the envFrom list the chart already
+  # renders -- no chart feature invented, this is exactly how
+  # templates/backend/deployment.yaml (and worker's, beat's and the migration
+  # Job's) already branch.
   existingSecret: securo-runtime
 
 # No `secret:` block here on purpose. It is only ever consumed by
