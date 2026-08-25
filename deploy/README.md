@@ -58,7 +58,12 @@ first fixes it.
 
 ## Secrets
 
-Two Secrets, provisioned imperatively on the cluster — `kubectl apply -f -`
+Three Secrets, provisioned imperatively on the cluster with `kubectl create
+secret generic` — **never plain `kubectl apply -f -`**. Client-side apply stamps
+the whole object, values included, into the `last-applied-configuration`
+metadata annotation, which is a live leak in existing Secrets elsewhere in this
+estate. Use `create`, or `apply --server-side` if you must apply. No generated
+Secret manifest enters Git.
 fed over stdin, the same contract as `worth-runtime`, `worth-accessbank`,
 and `paperless-runtime`. No generated Secret manifest enters Git.
 
@@ -101,20 +106,28 @@ generated Secret) entirely — backend, worker, and beat all read from
 branch the chart already has in each of their Deployments (and in the
 migration Job). No chart feature was invented to make this work.
 
-**Three objects, not one, and the split is about rotation cost.** The chart
+**Three objects, not one, and the split is about sensitivity.** The chart
 offers a single `global.existingSecret` knob, and setting it disables the
 chart's own generated Secret entirely — so by default everything would have to
 live in one object. `deploy/kustomization.yaml` patches a second and third
 `secretRef` onto the consumers instead, using the same `envFrom` list the
 chart already renders. No chart feature was invented.
 
-The reason is that these three credentials have incompatible rotation stories:
+**Correction 2026-08-25:** an earlier version of this section justified the
+split on rotation cost, saying `DATABASE_URL` is touched by routine operations.
+It cannot be rotated at all as the chart stands — see the Postgres password
+note below. The split is still right, on sensitivity rather than rotation.
+
+The three differ in what compromising each one yields:
 
 - `SECRET_KEY` must **never** change. It signs every session token and derives
   the Fernet key that encrypts the stored bank credential, so rotating it
   strands that credential and forces a manual reconnect through the UI.
-- `DATABASE_URL` is touched by routine operations — a Postgres password
-  rotation, or a move to an external database.
+- `DATABASE_URL` is the least sensitive of the three: the password inside it is
+  a published constant (below), so the object is a wrapper around a value that
+  is not secret. It is separate so that a future move to an external database —
+  the one change that WOULD make it a real credential — does not mean editing
+  the object that holds `SECRET_KEY`.
 - `OPENEXCHANGERATES_APP_ID` is free to rotate whenever.
 
 Under one combined Secret, rotating the cheap FX key means recreating the
@@ -140,15 +153,15 @@ CrashLoops — loud, which is what we want.
 # derived key's entropy is exactly this value's entropy and nothing else.
 kubectl create secret generic securo-runtime -n securo \
   --from-literal=SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(64))')" \
-  --dry-run=client -o yaml | kubectl apply -f -
+
 
 kubectl create secret generic securo-postgres -n securo \
   --from-literal=DATABASE_URL="postgresql+asyncpg://postgres:postgres@securo-postgresql:5432/securo" \
-  --dry-run=client -o yaml | kubectl apply -f -
+
 
 kubectl create secret generic securo-openexchangerates -n securo \
   --from-literal=OPENEXCHANGERATES_APP_ID="<App ID from the vault item>" \
-  --dry-run=client -o yaml | kubectl apply -f -
+
 ```
 
 The app refuses to start if `SECRET_KEY` is a known placeholder or shorter than
@@ -233,3 +246,43 @@ peer it exists for.
   terminates TLS, this should be `true` instead — left `false` here to
   match worth's plain-HTTP-behind-the-gateway pattern, not verified against
   the actual listener config from where this was written.
+
+## The Postgres password is not a secret, and the network policy is what defends it
+
+`charts/securo/templates/postgresql/statefulset.yaml` sets `POSTGRES_USER` and
+`POSTGRES_PASSWORD` as literal `value:` fields — both `postgres` — not from any
+Secret. They are therefore published constants in a public repository, and they
+cannot be rotated without patching the chart.
+
+So `securo-postgres` wraps a value that is not secret, and **the only thing
+protecting the database is network reach.** That database is about to hold
+roughly 90 days of bank transaction history which cannot be re-fetched, so the
+fence matters more than it would for a cache.
+
+`deploy/ciliumnetworkpolicy.yaml` is that fence. Verified against the rendered
+manifests on 2026-08-25 — every selector below matches labels the pods actually
+carry, which is the failure mode that matters most here: a policy whose selector
+matches nothing is worse than no policy, because it looks like protection.
+
+| Endpoint | Ingress allowed from | Port |
+|---|---|---|
+| `securo-postgresql` | backend, celery-worker, migration Job — **nothing else** | 5432/TCP |
+| `securo-redis` | backend, celery-worker, celery-beat | 6379/TCP |
+| `securo-backend` | frontend, plus the `host` entity for kubelet probes | 8000/TCP |
+| `securo-frontend` | `ingress` (the Gateway's Envoy) and `host` | 8080/TCP |
+
+A CiliumNetworkPolicy with an `ingress:` section makes that endpoint
+default-deny for ingress, so anything absent from the table is denied — including
+pods in other namespaces and anything else on the cluster.
+
+**celery-beat is deliberately NOT allowed to reach Postgres.** It runs
+`celery -A app.worker beat` against an in-config `beat_schedule`, which uses
+Celery's default file-based scheduler and needs the broker only. Do not add it
+"for symmetry" — it would be a hole with no purpose.
+
+Postgres egress is DNS only; it never initiates an outbound connection.
+
+**This depends on Cilium actually enforcing CiliumNetworkPolicy.** These are
+`cilium.io/v2` resources; on a cluster without Cilium they are inert CRDs that
+apply cleanly and protect nothing. Confirm enforcement is live before treating
+the table above as true — and before connecting a real bank account.
