@@ -53,8 +53,8 @@ patches:
 # charts/securo/templates/common/httproute.yaml welds a second rule
 # (PathPrefix /mcp -> securo-mcp-server:8765) to `mcpServer.enabled`, with no
 # separate toggle. Enabling the MCP server for the in-app agent therefore also
-# publishes it on securo.local.luqmanlabs.com as a side effect. This removes
-# that rule so the two decisions stay separate.
+# publishes it on securo.local.luqmanlabs.com as a side effect. This declares
+# the rules list outright so that side effect cannot happen.
 #
 # It is not needed: the agent reaches the server over the in-cluster
 # AGENTS_BUILTIN_MCP_URL (http://securo-mcp-server:8765/mcp). The public URL
@@ -67,16 +67,38 @@ patches:
 # and nothing else. `_assert_mcp_jwt_secret_is_usable` makes that JWT strong,
 # but a strong lock on a door nobody needs is still a door.
 #
-# `rules/1` is the /mcp rule; `rules/0` is the frontend catch-all. If the
-# chart ever adds a third rule this index must be rechecked -- the release
-# workflow asserts the rendered route has exactly two rules with /mcp second,
-# so a reordering fails the build instead of silently removing the wrong one.
+# THIS REPLACES A POSITIONAL `op: remove /spec/rules/1`, WHICH WAS WRONG TWICE
+# OVER and is worth recording rather than quietly improving:
+#
+#   1. It broke the moment mcpServer was toggled off. With one rule rendered,
+#      `remove /spec/rules/1` is an invalid index and `kustomize build` FAILS
+#      -- so Argo cannot sync at all. A patch that only works in one of two
+#      supported states is a trap, not a fix.
+#   2. Even while it worked, it was order-dependent: a chart that reordered or
+#      inserted a rule would have made it delete the frontend catch-all,
+#      taking the whole UI off the Gateway with every pod still Healthy.
+#
+# Declaring the list says what we want rather than where to cut. Kustomize
+# replaces list values for CRD kinds it has no merge strategy for, so this is
+# the whole `rules` list in both states: /mcp is absent because it is not
+# written here, not because something removed it.
   - target:
       kind: HTTPRoute
       name: securo
     patch: |-
-      - op: remove
-        path: /spec/rules/1
+      apiVersion: gateway.networking.k8s.io/v1
+      kind: HTTPRoute
+      metadata:
+        name: securo
+      spec:
+        rules:
+          - matches:
+              - path:
+                  type: PathPrefix
+                  value: /
+            backendRefs:
+              - name: securo-frontend
+                port: 3000
   - target:
       kind: Job
       name: securo-migration

@@ -159,7 +159,7 @@ httpRoute:
 # api_key_encrypted), the same protection as the bank credential. It is
 # entered in the UI.
 mcpServer:
-  enabled: true
+  enabled: false
 
 # Internal Postgres, not an external database. ReadWriteOnce is already the
 # only option: charts/securo/templates/postgresql/statefulset.yaml hardcodes

@@ -226,49 +226,38 @@ jobs:
             exit 1
           fi
 
-          # mcpServer.enabled was turned ON 2026-08-25 for the agents feature.
-          # The old check here asserted the opposite -- that no mcp-server
-          # existed -- so that enabling it could not happen as a side effect
-          # of a chart bump. That intent is kept, inverted: the component must
-          # now be present, so a chart change that silently drops it fails
-          # rather than quietly disabling the feature.
-          if ! grep -q "component: mcp-server" deploy/manifests.yaml; then
-            echo "::error::deploy/manifests.yaml has no mcp-server resource; mcpServer.enabled must stay true while the agents feature is on."
-            exit 1
-          fi
-
-          # The chart welds a public /mcp HTTPRoute rule to mcpServer.enabled
-          # (charts/securo/templates/common/httproute.yaml) and offers no
-          # separate toggle. deploy/kustomization.yaml removes it with a
-          # POSITIONAL patch on /spec/rules/1, so the order of the rendered
-          # rules is load-bearing: if the chart ever reorders or inserts a
-          # rule, that patch would delete the wrong one -- most likely the
-          # frontend catch-all, taking the entire UI off the Gateway with
-          # every pod still Healthy.
+          # The agents MCP server must never be published on the Gateway.
           #
-          # Two checks, and together they are the outcome rather than a proxy
-          # for it. Kustomize is deterministic, so "the route has exactly two
-          # rules, /mcp second" plus "the remove patch is present" entails
-          # "the applied route has no /mcp". Asserted with grep against the
-          # rendered chart, matching how every other check in this step
-          # works -- no yq, no kubectl, nothing this runner has to install.
-          ROUTE=$(awk '/^# Source: securo\/templates\/common\/httproute.yaml/,/^---$/' deploy/manifests.yaml)
-
-          RULE_COUNT=$(printf '%s\n' "$ROUTE" | grep -c "^    - matches:")
-          if [ "$RULE_COUNT" != "2" ]; then
-            echo "::error::HTTPRoute has $RULE_COUNT rules, expected 2. deploy/kustomization.yaml removes /spec/rules/1 assuming rule 1 is /mcp; with a different shape it would remove the wrong rule."
+          # This check tolerates mcpServer.enabled being either true or false,
+          # deliberately. An earlier version asserted the component was always
+          # PRESENT; homelab-platform simultaneously had one asserting it was
+          # always ABSENT. Theirs wedged the promotion pipeline permanently the
+          # day Luqman changed his mind -- the fix could not ship through the
+          # pipeline it was blocking. An absolute assertion about something the
+          # owner is entitled to toggle is a trap whichever way it points.
+          #
+          # So assert the INVARIANT instead: whatever the toggle says, nothing
+          # routes /mcp. deploy/kustomization.yaml declares the HTTPRoute rules
+          # list outright rather than deleting a rule by index, so this holds in
+          # both states by construction -- /mcp is absent because it is not
+          # written, not because something removed it.
+          if grep -q "value: /mcp" deploy/kustomization.yaml; then
+            echo "::error::deploy/kustomization.yaml declares an HTTPRoute rule for /mcp; the agents MCP server must not be externally routed."
             exit 1
           fi
 
-          PATHS=$(printf '%s\n' "$ROUTE" | grep "value: /" | awk '{print $2}' | paste -sd, -)
-          if [ "$PATHS" != "/,/mcp" ]; then
-            echo "::error::HTTPRoute paths are '$PATHS', expected '/,/mcp'. The kustomize patch would remove the wrong rule."
+          if ! grep -q "kind: HTTPRoute" deploy/kustomization.yaml; then
+            echo "::error::deploy/kustomization.yaml no longer patches the HTTPRoute; enabling mcpServer would publish /mcp on the Gateway as a side effect."
             exit 1
           fi
 
-          if ! grep -q "path: /spec/rules/1" deploy/kustomization.yaml; then
-            echo "::error::deploy/kustomization.yaml no longer removes /spec/rules/1; enabling mcpServer would publish /mcp on the Gateway."
-            exit 1
+          # And the chart side, so a chart change is noticed rather than
+          # silently overridden: if mcp-server is deployed, the chart is still
+          # expected to be the thing adding /mcp that we are overriding.
+          if grep -q "component: mcp-server" deploy/manifests.yaml; then
+            if ! grep -q "value: /mcp" deploy/manifests.yaml; then
+              echo "::notice::mcp-server is deployed but the chart no longer renders a /mcp route; the HTTPRoute override in kustomization.yaml may now be redundant."
+            fi
           fi
 
       - name: Commit and push
