@@ -40,9 +40,10 @@ try to keep running forever.
 A locally regenerated `manifests.yaml` still needs the images repointed
 from `:unset` to `@sha256:...` by hand or by re-running the digest-pinning
 step from the workflow — see `.github/workflows/release.yml`'s `deploy`
-job. Never commit a `:unset`-tagged or otherwise tag-pinned image; a
-validator fails the deploy if any `ghcr.io/luqmanbello/securo-` image
-reference lacks `@sha256:`.
+job. Outside the initial bootstrap commit (see below), never commit a
+`:unset`-tagged or otherwise tag-pinned image; a validator fails the
+deploy if any `ghcr.io/luqmanbello/securo-` image reference lacks
+`@sha256:`.
 
 ## Bootstrap gap
 
@@ -57,13 +58,19 @@ first fixes it.
 
 ## Secrets
 
-One Secret, provisioned imperatively on the cluster — `kubectl apply -f -`
-fed over stdin, the same contract as `worth-runtime` and
-`paperless-runtime`. No generated Secret manifest enters Git.
+Two Secrets, provisioned imperatively on the cluster — `kubectl apply -f -`
+fed over stdin, the same contract as `worth-runtime`, `worth-accessbank`,
+and `paperless-runtime`. No generated Secret manifest enters Git.
 
 | Secret | Keys | Consumed by |
 |---|---|---|
 | `securo-runtime` (namespace `securo`) | `SECRET_KEY`, `OPENEXCHANGERATES_APP_ID`, `DATABASE_URL` | backend, celery-worker, celery-beat (all three `envFrom: secretRef` this one Secret) |
+| `ghcr-pull` (namespace `securo`) | (docker-registry secret) | every workload that pulls a `ghcr.io/luqmanbello/securo-*` image — the four Deployments and the migration Job, via `imagePullSecrets` added by `deploy/kustomization.yaml`'s patches (the chart has no `imagePullSecrets` knob at all) |
+
+`ghcr-pull` follows the same reasoning as worth's row of the same name: the
+image is pushed to GHCR private by default on first push, and a missing
+Secret here is a silent `ImagePullBackOff`, not a startup error that says
+why.
 
 `deploy/values.yaml` sets `global.existingSecret: securo-runtime`, which
 disables `charts/securo/templates/common/secret.yaml` (the chart's own
@@ -127,6 +134,25 @@ migration Job — that must reach each other over the network as well as out
 to the Gateway and the internet. The file is one `CiliumNetworkPolicy` per
 workload so each rule stays scoped to, and commented against, the specific
 peer it exists for.
+
+## Other things worth knowing
+
+- **The `deploy` job renders from `main`'s current HEAD, not from the
+  released tag.** If commits land on `main` between a release being
+  published and the `deploy` job's checkout, the rendered manifests carry
+  those commits' non-image changes (chart templates, `deploy/values.yaml`)
+  too, not just the two new digests. This is the same skew worth's
+  `deploy.yml` accepts for the same reason: `deploy/` is meant to track
+  `main`, and the alternative (checking out the tag) would render a chart
+  that Argo CD then has to reconcile against a `main` that has already
+  moved past it.
+- **No `ghcr.io/luqmanbello/securo-backend` or `-frontend` package exists
+  yet.** As of this commit there is no release that has pushed either
+  image under this fork's GHCR namespace, so the first `deploy` job run
+  both creates them and writes their digests. GHCR packages are private by
+  default on creation — after that first release, someone needs to check
+  (or set) the packages' visibility and confirm `ghcr-pull` is provisioned
+  before Argo CD's sync can pull either image.
 
 ## Known chart limitations (not worked around here)
 

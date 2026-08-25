@@ -28,6 +28,18 @@ labels:
 # deletes and recreates the Job on every sync instead of trying to patch it
 # in place -- BeforeHookCreation deletes the previous run's Job first, which
 # is what makes the immutable field a non-issue.
+#
+# Separately: neither the chart nor any of its pod templates set
+# imagePullSecrets, and the backend/frontend images this fork builds land in
+# GHCR private by default on their first push (worth's README documents the
+# same fact for ghcr-pull; securo just never had the knob to carry it). The
+# two patches below add `ghcr-pull` to every workload that pulls a
+# ghcr.io/luqmanbello image -- the four Deployments and the migration Job.
+# postgres and redis pull public docker.io images and are StatefulSets, not
+# Deployments, so the unqualified `kind: Deployment` target does not touch
+# them. A referenced-but-missing Secret is harmless (kubelet warns and falls
+# back to an anonymous pull), so this is safe even before ghcr-pull exists
+# in the securo namespace.
 patches:
   - target:
       kind: Job
@@ -39,3 +51,16 @@ patches:
       - op: add
         path: /metadata/annotations/argocd.argoproj.io~1hook-delete-policy
         value: BeforeHookCreation
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value: [{name: ghcr-pull}]
+  - target:
+      kind: Job
+      name: securo-migration
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value: [{name: ghcr-pull}]
