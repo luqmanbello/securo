@@ -82,8 +82,77 @@ async def _warm_tesouro_cache() -> None:
         logger.exception("Startup: Tesouro Direto cache warm failed")
 
 
+# Values that must never reach a real deployment. `config.py` ships the first
+# as its default and `docker-compose.yml` supplies the second, so an unset or
+# misnamed Secret does not fail — it silently falls back to a published string.
+_INSECURE_SECRET_KEYS = {
+    "",
+    "change-me-in-production",
+    "dev-secret-change-in-production",
+}
+
+# 256 bits of urlsafe base64 is ~43 chars. Anything materially shorter than
+# that is either a placeholder or a hand-typed phrase.
+_MIN_SECRET_KEY_LENGTH = 32
+
+
+def _assert_secret_key_is_usable() -> None:
+    """Refuse to serve on a guessable SECRET_KEY.
+
+    This is a hard startup failure rather than a warning, because every way it
+    goes wrong is invisible at runtime. SECRET_KEY signs the JWTs that
+    authenticate every user (`app/core/auth.py`), signs password-reset and
+    verification tokens, AND derives the Fernet key that encrypts stored bank
+    credentials (`app/agents/services/crypto.py`) — using a salt that is a
+    constant in this repository. So a default key means anyone who can read
+    this source can mint a valid session for any user and decrypt any stored
+    bank credential out of the database or a backup of it.
+
+    None of that is visible from outside: the pods are Healthy, the UI works,
+    and the only symptom is that the encryption was never real. A missing
+    Secret has to be loud at boot or it is never noticed at all.
+
+    In debug mode the placeholder is expected (that is what compose ships), so
+    it warns instead — but it still warns, because a developer who connects a
+    real bank locally is storing a real credential under a public key.
+    """
+    settings = get_settings()
+    value = settings.secret_key.get_secret_value()
+    insecure = value in _INSECURE_SECRET_KEYS
+    too_short = len(value) < _MIN_SECRET_KEY_LENGTH
+
+    if not (insecure or too_short):
+        return
+
+    reason = (
+        "SECRET_KEY is a known placeholder"
+        if insecure
+        else f"SECRET_KEY is shorter than {_MIN_SECRET_KEY_LENGTH} characters"
+    )
+
+    if settings.debug:
+        logger.warning(
+            "%s. This is tolerated because DEBUG is on, but sessions are "
+            "forgeable and any stored bank credential is decryptable by "
+            "anyone with this source. Do not connect a real bank.",
+            reason,
+        )
+        return
+
+    raise RuntimeError(
+        f"{reason}. Refusing to start: it signs every session token and "
+        "derives the key that encrypts stored bank credentials, so a "
+        "guessable value means forgeable logins and recoverable credentials. "
+        "Set SECRET_KEY to at least "
+        f"{_MIN_SECRET_KEY_LENGTH} characters from a CSPRNG, e.g. "
+        "python3 -c 'import secrets; print(secrets.token_urlsafe(64))'."
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Before anything else, and before any request can be served.
+    _assert_secret_key_is_usable()
     # Startup: dispatch sync for all stale bank connections
     try:
         from app.worker import celery_app  # noqa: F811
