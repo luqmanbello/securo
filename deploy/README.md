@@ -1,0 +1,152 @@
+# Deploying securo
+
+Argo CD watches `deploy/` on `main` and applies whatever plain manifests it
+finds there via Kustomize. **This directory is GENERATED** (except
+`ciliumnetworkpolicy.yaml`, `kustomization.yaml`, `values.yaml`, and this
+file) — do not hand-edit `manifests.yaml`, it will be overwritten.
+
+`manifests.yaml` is `helm template` output from `charts/securo`, rendered
+with `values.yaml` in this directory, with both image references pinned to
+a digest. It is written by the `deploy` job in
+`.github/workflows/release.yml`, which runs after `build-backend` and
+`build-frontend` on every published release — the commit that writes the
+digests *is* the deploy, same pattern and same reasoning as
+`luqmanbello/worth`'s `deploy/` (homelab ADR-0140).
+
+Argo's root Application template for this app can pass only a
+`releaseName` — no values, no valueFiles, no parameters — which is why
+`deploy/` holds rendered manifests instead of pointing Argo at the chart
+directly with an external values file. All configuration that would
+normally live in a Helm values override lives in `deploy/values.yaml`
+instead, baked into the render.
+
+## Regenerate locally
+
+```sh
+helm template securo charts/securo -f deploy/values.yaml \
+  --namespace securo --skip-tests > deploy/manifests.yaml
+```
+
+The release name **must** be `securo`: `charts/securo/templates/_helpers.tpl`
+collapses `securo.fullname` to the release name whenever it already
+contains the chart name, so this is what makes resources come out named
+`securo`, `securo-backend`, `securo-postgresql`, etc. — the names
+`deploy/ciliumnetworkpolicy.yaml`'s selectors and this file's `DATABASE_URL`
+below both assume. `--skip-tests` drops the chart's `helm.sh/hook: test`
+pod (a `wget` connectivity check meaningless outside `helm test`); without
+it, `helm template` still renders it as a plain `Pod` that Argo would then
+try to keep running forever.
+
+A locally regenerated `manifests.yaml` still needs the images repointed
+from `:unset` to `@sha256:...` by hand or by re-running the digest-pinning
+step from the workflow — see `.github/workflows/release.yml`'s `deploy`
+job. Never commit a `:unset`-tagged or otherwise tag-pinned image; a
+validator fails the deploy if any `ghcr.io/luqmanbello/securo-` image
+reference lacks `@sha256:`.
+
+## Bootstrap gap
+
+The `manifests.yaml` committed alongside this README was rendered locally
+for verification only, with the placeholder `unset` tag still in place —
+there was no release to pull a real digest from at the time this directory
+was created. If Argo CD syncs this commit before the next GitHub Release is
+published, both application pods will sit in `ImagePullBackOff` until the
+`deploy` job runs and writes real digests over it. This is a one-time gap
+in the bootstrap sequence, not a recurring issue: every release after the
+first fixes it.
+
+## Secrets
+
+One Secret, provisioned imperatively on the cluster — `kubectl apply -f -`
+fed over stdin, the same contract as `worth-runtime` and
+`paperless-runtime`. No generated Secret manifest enters Git.
+
+| Secret | Keys | Consumed by |
+|---|---|---|
+| `securo-runtime` (namespace `securo`) | `SECRET_KEY`, `OPENEXCHANGERATES_APP_ID`, `DATABASE_URL` | backend, celery-worker, celery-beat (all three `envFrom: secretRef` this one Secret) |
+
+`deploy/values.yaml` sets `global.existingSecret: securo-runtime`, which
+disables `charts/securo/templates/common/secret.yaml` (the chart's own
+generated Secret) entirely — backend, worker, and beat all read from
+`securo-runtime` instead, through the exact same `envFrom`/`secretRef`
+branch the chart already has in each of their Deployments (and in the
+migration Job). No chart feature was invented to make this work.
+
+**Because the generated Secret is disabled outright, `securo-runtime` must
+carry all three keys, not just the two that are actually secret-shaped.**
+`DATABASE_URL` looks like plain configuration, but it only exists in the
+chart as `secret.databaseUrl` — with no existing Secret, missing it means
+the backend falls back to its own default
+(`postgresql+asyncpg://postgres:postgres@localhost:5432/securo`) and
+CrashLoops. With the release name `securo` (see above), the value that
+must go in this Secret is:
+
+```
+postgresql+asyncpg://postgres:postgres@securo-postgresql:5432/securo
+```
+
+```sh
+kubectl create secret generic securo-runtime -n securo \
+  --from-literal=SECRET_KEY="$(openssl rand -hex 32)" \
+  --from-literal=OPENEXCHANGERATES_APP_ID="<app id from openexchangerates.org>" \
+  --from-literal=DATABASE_URL="postgresql+asyncpg://postgres:postgres@securo-postgresql:5432/securo" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+The backend, celery-worker, and celery-beat Deployments all run the same
+image and read the same `Settings` object (`backend/app/core/config.py`),
+so all three need the same env vars — `SECRET_KEY` for auth token signing
+in the backend and worker (invalidation on rotation affects both),
+`OPENEXCHANGERATES_APP_ID` read by the worker on scheduled FX syncs, and
+`DATABASE_URL` by all three including the migration Job.
+
+## Access Bank (Nigeria) import
+
+Read-only balance/transaction import, the reason this fork exists.
+`deploy/values.yaml` sets `ACCESSBANK_ENABLED=true` and
+`ACCESSBANK_IMPORT_CURRENCIES=USD` (see `backend/app/providers/accessbank.py`
+and `backend/app/core/config.py` for what those control) and pins
+`SUPPORTED_CURRENCIES` to the backend's default list including NGN.
+Per-connection bank credentials are supplied by the user through the app
+itself and stored encrypted on the connection row — there is no bank
+credential Secret to provision here, unlike `worth-accessbank`.
+
+## Network policy
+
+`deploy/ciliumnetworkpolicy.yaml` is hand-written, not rendered — the chart
+has no NetworkPolicy of its own. It is a `CiliumNetworkPolicy` rather than
+a plain `NetworkPolicy` for the same reason as worth's: the Cilium Gateway
+is host-network Envoy carrying the reserved `ingress` identity, which an
+ipBlock rule never matches, and `fromEntities` is what actually speaks that
+identity model. Full reasoning and per-rule justification is in the file's
+own comments.
+
+Unlike worth (one pod, one policy), securo is six workloads — frontend,
+backend, celery-worker, celery-beat, postgres, redis, plus a one-shot
+migration Job — that must reach each other over the network as well as out
+to the Gateway and the internet. The file is one `CiliumNetworkPolicy` per
+workload so each rule stays scoped to, and commented against, the specific
+peer it exists for.
+
+## Known chart limitations (not worked around here)
+
+- **Postgres/redis storage is not configurable via values.** Both
+  StatefulSets (`charts/securo/templates/postgresql/statefulset.yaml`,
+  `.../redis/statefulset.yaml`) hardcode their `volumeClaimTemplates` —
+  8Gi/RWO for postgres, 2Gi/RWO for redis, no `storageClassName` field at
+  all. Unlike `persistence.attachments` (which does support
+  `storageClass`/`size`/`accessMode` from values), there is no equivalent
+  knob here. `deploy/values.yaml` does **not** set a `postgresql.storage*`
+  or `redis.storage*` value, because the chart would silently ignore it —
+  a value that does nothing is worse than no value. RWO is satisfied by
+  the hardcoding; storage class falls to the cluster's default
+  StorageClass, which is `local-path` on every sibling app's PVC in this
+  estate, but that assumption is carried over from `worth`, not verified
+  against this cluster from where this was written. Making postgres storage
+  configurable (mirroring the `persistence.attachments` pattern) is a
+  follow-up to the chart itself, out of scope for this directory.
+- **`FRONTEND_URL`'s scheme follows `global.tls`, currently `false`.** If
+  the `homelab`/`local` Gateway listener this app's `HTTPRoute` targets
+  terminates TLS, this should be `true` instead — left `false` here to
+  match worth's plain-HTTP-behind-the-gateway pattern, not verified against
+  the actual listener config from where this was written.
