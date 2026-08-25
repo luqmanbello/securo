@@ -259,7 +259,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: "ghcr.io/luqmanbello/securo-backend:unset"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:54810b63b224132a76df58aee7289e8c61fd27c70616da8d52f408ac61363a03"
           imagePullPolicy: IfNotPresent
           command:
             - uvicorn
@@ -335,7 +335,7 @@ spec:
     spec:
       containers:
         - name: celery-beat
-          image: "ghcr.io/luqmanbello/securo-backend:unset"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:54810b63b224132a76df58aee7289e8c61fd27c70616da8d52f408ac61363a03"
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -404,7 +404,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: "ghcr.io/luqmanbello/securo-frontend:unset"
+          image: "ghcr.io/luqmanbello/securo-frontend@sha256:8264d7750425e5ecaebd7098d41345942ef18406585fe181de181f50a447214d"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -474,7 +474,7 @@ spec:
     spec:
       containers:
         - name: celery-worker
-          image: "ghcr.io/luqmanbello/securo-backend:unset"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:54810b63b224132a76df58aee7289e8c61fd27c70616da8d52f408ac61363a03"
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -663,7 +663,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: migration
-          image: "ghcr.io/luqmanbello/securo-backend:unset"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:54810b63b224132a76df58aee7289e8c61fd27c70616da8d52f408ac61363a03"
           imagePullPolicy: IfNotPresent
           command:
             - sh
