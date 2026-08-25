@@ -149,10 +149,90 @@ def _assert_secret_key_is_usable() -> None:
     )
 
 
+# The agents feature ships its own shared secret with its own placeholder,
+# declared in `app/agents/config.py` rather than here.
+_INSECURE_MCP_JWT_SECRETS = frozenset(
+    {"", "change-me-in-production", "dev-mcp-secret-change-in-production"}
+)
+_MIN_MCP_JWT_SECRET_LENGTH = 32
+
+
+def _assert_mcp_jwt_secret_is_usable() -> None:
+    """Refuse to serve with agents on and a guessable AGENTS_MCP_JWT_SECRET.
+
+    Only checked when `AGENTS_ENABLED` is true: with agents off the router is
+    not mounted, the mcp-server container is not deployed, and the value
+    signs nothing.
+
+    With agents on it is the *only* thing standing in front of the MCP
+    server. `mcp_server/auth.py` authenticates every tool call by verifying
+    an HS256 JWT against this secret and nothing else — there is no second
+    factor, no allowlist, and no network assumption baked into the check.
+    The tools it guards read and write real financial data (transactions,
+    accounts, budgets, payees, proposals) directly against the database, and
+    a chart that publishes the server behind an ingress makes that endpoint
+    reachable by anything that can resolve the host.
+
+    So a placeholder here is worse than a weak password: the value is
+    printed in this repository, which means anyone who can read the source
+    can mint a token that the server accepts. Like SECRET_KEY, every way it
+    goes wrong is invisible — the pods are Healthy, the agent works, and the
+    only symptom is that the authentication was never real.
+
+    Deliberately mirrors `_assert_secret_key_is_usable` rather than sharing
+    with it: the two secrets have different names, different defaults and
+    independent revocation, and collapsing them would make one failure
+    message describe the wrong key.
+    """
+    from app.agents.config import get_agent_settings
+
+    agent_settings = get_agent_settings()
+    if not agent_settings.enabled:
+        return
+
+    value = agent_settings.mcp_jwt_secret or ""
+    insecure = value in _INSECURE_MCP_JWT_SECRETS
+    too_short = len(value) < _MIN_MCP_JWT_SECRET_LENGTH
+
+    if not (insecure or too_short):
+        return
+
+    reason = (
+        "AGENTS_MCP_JWT_SECRET is a known placeholder"
+        if insecure
+        else (
+            "AGENTS_MCP_JWT_SECRET is shorter than "
+            f"{_MIN_MCP_JWT_SECRET_LENGTH} characters"
+        )
+    )
+
+    if get_settings().debug:
+        logger.warning(
+            "%s, while AGENTS_ENABLED is true. This is tolerated because "
+            "DEBUG is on, but anyone who can reach the MCP server can forge "
+            "a token and read or modify financial data. Do not expose it.",
+            reason,
+        )
+        return
+
+    raise RuntimeError(
+        f"{reason}, while AGENTS_ENABLED is true. Refusing to start: this "
+        "secret is the only thing authenticating MCP tool calls, and those "
+        "tools read and write transactions, accounts and budgets directly. "
+        "A placeholder is published in this repository, so anyone who can "
+        "read the source can mint a token the server accepts. Set "
+        "AGENTS_MCP_JWT_SECRET to at least "
+        f"{_MIN_MCP_JWT_SECRET_LENGTH} characters from a CSPRNG, e.g. "
+        "python3 -c 'import secrets; print(secrets.token_urlsafe(64))' — or "
+        "set AGENTS_ENABLED=false if you are not using the agents feature."
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Before anything else, and before any request can be served.
     _assert_secret_key_is_usable()
+    _assert_mcp_jwt_secret_is_usable()
     # Startup: dispatch sync for all stale bank connections
     try:
         from app.worker import celery_app  # noqa: F811

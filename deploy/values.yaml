@@ -71,6 +71,33 @@ config:
   # Settings.supported_currencies as of this commit -- it already includes
   # NGN, which is why this fork exists.
   supportedCurrencies: "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,RUB,GTQ,PHP,UAH,NZD,VND,SGD,NGN"
+  # Agents/LLM. On 2026-08-25 at the owner's request; see the mcpServer
+  # block below for why this is safe and what it turns on. This flag also
+  # gates the two agent PVCs and their mounts in the chart -- note that
+  # beat's guard on those mounts was broken until 26eba9d, so anyone
+  # cherry-picking this value onto an older chart gets an unschedulable
+  # beat pod with no logs.
+  agentsEnabled: "true"
+  # AGENTS_EXTERNAL_MCP_URL renders as https://securo.local.luqmanlabs.com/mcp
+  # and is left that way ON PURPOSE even though kustomization.yaml removes
+  # that route, so the string currently 404s. It is a display-only value in
+  # the UI's external-token panel; nothing calls it. Blanking it is not more
+  # honest -- the chart then has the frontend derive `<host>:8765/mcp`, which
+  # is equally unreachable. Left pointing at the URL that WOULD work, because
+  # restoring the route is the one action that makes the panel correct.
+  # Left at the chart default `ollama` deliberately. There is no ollama in
+  # this cluster; the per-agent LLM connection chosen in the UI wins over
+  # this instance-wide default, so it is never consulted. Changing it to
+  # openai_compatible would ALSO require AGENTS_OPENAI_COMPAT_BASE_URL and
+  # an API key in env, which is exactly the arrangement we are avoiding by
+  # keeping the OpenRouter key in the encrypted DB row instead.
+  #   agentsDefaultProvider: "ollama"
+  #
+  # Embeddings stay `native` (fastembed, in-process). OpenRouter has no
+  # /v1/embeddings endpoint, so pointing embeddings at it would fail at the
+  # first knowledge-base upload. fastembed is lazy-imported and downloads a
+  # ~120MB ONNX model to the agent-embedding-models PVC on first use, so an
+  # unused knowledge base costs nothing.
 
 backend:
   image:
@@ -103,12 +130,36 @@ httpRoute:
   # hostname field here.
 
 # The agents/LLM feature (a built-in MCP server exposing this app's data to
-# an LLM agent). Deliberately off: this fork's job is bank connectivity, not
-# agent access to a personal-finance database. A validator asserts no
-# mcp-server Deployment exists in deploy/, so turning this on is meant to be
-# a deliberate, reviewed act, not a chart-upgrade accident.
+# an LLM agent). Turned ON 2026-08-25 on the owner's explicit request, for
+# transaction categorisation and spending questions via OpenRouter. This was
+# previously off with a validator asserting no mcp-server existed, precisely
+# so that enabling it would be a deliberate, reviewed act. It is that act.
+#
+# Three things make it safe, and none of them is "it is on the LAN":
+#
+#   1. AGENTS_MCP_JWT_SECRET is the ONLY thing authenticating MCP tool calls
+#      (backend/mcp_server/auth.py verifies an HS256 JWT against it and
+#      nothing else). Its code default is `change-me-in-production` and the
+#      chart's is `dev-mcp-secret-change-in-production` -- both published in
+#      this repository. `_assert_mcp_jwt_secret_is_usable` in
+#      backend/app/main.py now REFUSES TO START on either, and on anything
+#      under 32 chars, whenever AGENTS_ENABLED is true. A missing Secret is
+#      a crash-loop, not a silently forgeable endpoint.
+#   2. The public /mcp route the chart adds is REMOVED by a patch in
+#      kustomization.yaml. The in-app agent uses the in-cluster
+#      AGENTS_BUILTIN_MCP_URL; nothing needs /mcp on the Gateway today.
+#      Re-adding it (for Claude Desktop, n8n, etc.) is its own decision.
+#   3. mcp-server talks DIRECTLY to Postgres (backend/mcp_server/main.py
+#      imports async_session_maker), so it is fenced like backend and worker
+#      -- see ciliumnetworkpolicy.yaml, which grows a securo-mcp-server
+#      policy and a new entry on securo-postgresql's ingress.
+#
+# The OpenRouter API key is NOT here and must never be: it is stored per
+# connection in the database, encrypted with SECRET_KEY (LlmConnection.
+# api_key_encrypted), the same protection as the bank credential. It is
+# entered in the UI.
 mcpServer:
-  enabled: false
+  enabled: true
 
 # Internal Postgres, not an external database. ReadWriteOnce is already the
 # only option: charts/securo/templates/postgresql/statefulset.yaml hardcodes

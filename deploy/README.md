@@ -286,3 +286,57 @@ Postgres egress is DNS only; it never initiates an outbound connection.
 `cilium.io/v2` resources; on a cluster without Cilium they are inert CRDs that
 apply cleanly and protect nothing. Confirm enforcement is live before treating
 the table above as true — and before connecting a real bank account.
+
+## Agents / LLM (enabled 2026-08-25)
+
+`config.agentsEnabled` and `mcpServer.enabled` are both **true**. This turns on
+four things: the agents API on the backend, the `securo-mcp-server` Deployment,
+two PVCs (`securo-agent-knowledge`, `securo-agent-embedding-models`), and their
+mounts on backend, worker, beat and mcp-server.
+
+**`AGENTS_MCP_JWT_SECRET` must exist in `securo-runtime` BEFORE this is
+deployed.** It is not optional and not merely advisable:
+
+- It is the only thing authenticating MCP tool calls. `backend/mcp_server/auth.py`
+  verifies an HS256 JWT against it and checks nothing else.
+- The tools it guards (`backend/mcp_server/tools/`) read and write transactions,
+  accounts, budgets, payees and proposals directly against the database.
+- Both its defaults — `change-me-in-production` in `app/agents/config.py` and
+  `dev-mcp-secret-change-in-production` in `charts/securo/values.yaml` — are
+  published in this repository.
+
+`_assert_mcp_jwt_secret_is_usable` in `backend/app/main.py` refuses to start on
+either default, or on anything under 32 characters, whenever `AGENTS_ENABLED` is
+true. So deploying without the Secret is a **CrashLoopBackOff, not a silent
+hole** — which is the intended failure, but it does mean the order is strict:
+Secret first, then push. Deploying first takes the app down.
+
+With agents off, the guard does not fire at all, so this adds nothing to
+deployments that do not use the feature.
+
+### What is deliberately NOT exposed
+
+The chart welds a public `/mcp` HTTPRoute rule to `mcpServer.enabled` with no
+separate toggle. `kustomization.yaml` removes it. The in-app agent uses the
+in-cluster `AGENTS_BUILTIN_MCP_URL`; the public URL is for external MCP clients
+(Claude Desktop, n8n), which nothing here uses. Restoring it is a decision, and
+`ciliumnetworkpolicy.yaml` must grow `fromEntities: [ingress]` on the
+`securo-mcp-server` policy in the same change or the route will exist and
+silently fail.
+
+The release workflow asserts the rendered route has exactly two rules with
+`/mcp` second, and that the removal patch is still present — because the patch
+is positional (`/spec/rules/1`) and a reordered chart would otherwise delete
+the frontend catch-all instead, taking the UI off the Gateway with every pod
+still Healthy.
+
+### The OpenRouter key is not here
+
+It is entered in the UI and stored per connection as
+`LlmConnection.api_key_encrypted`, encrypted with `SECRET_KEY` — the same
+protection as the bank credential. It must never be added to `values.yaml`,
+the ConfigMap, or any Secret.
+
+Embeddings stay `native` (fastembed, in-process): OpenRouter has no
+`/v1/embeddings` endpoint. The ~120MB ONNX model downloads to the
+embedding-models PVC on first knowledge-base use and costs nothing until then.

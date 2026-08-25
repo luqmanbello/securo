@@ -48,6 +48,35 @@ labels:
 # public docker.io images and never need it.
 
 patches:
+# --- Do not publish /mcp on the Gateway --------------------------------------
+#
+# charts/securo/templates/common/httproute.yaml welds a second rule
+# (PathPrefix /mcp -> securo-mcp-server:8765) to `mcpServer.enabled`, with no
+# separate toggle. Enabling the MCP server for the in-app agent therefore also
+# publishes it on securo.local.luqmanlabs.com as a side effect. This removes
+# that rule so the two decisions stay separate.
+#
+# It is not needed: the agent reaches the server over the in-cluster
+# AGENTS_BUILTIN_MCP_URL (http://securo-mcp-server:8765/mcp). The public URL
+# exists for EXTERNAL MCP clients -- Claude Desktop, n8n -- which nothing here
+# uses today.
+#
+# What it would expose is not a read-only view: mcp_server/tools/ carries
+# transactions, accounts, budgets, payees, proposals and lifecycle handlers
+# running straight against the database, authenticated by a single HS256 JWT
+# and nothing else. `_assert_mcp_jwt_secret_is_usable` makes that JWT strong,
+# but a strong lock on a door nobody needs is still a door.
+#
+# `rules/1` is the /mcp rule; `rules/0` is the frontend catch-all. If the
+# chart ever adds a third rule this index must be rechecked -- the release
+# workflow asserts the rendered route has exactly two rules with /mcp second,
+# so a reordering fails the build instead of silently removing the wrong one.
+  - target:
+      kind: HTTPRoute
+      name: securo
+    patch: |-
+      - op: remove
+        path: /spec/rules/1
   - target:
       kind: Job
       name: securo-migration
@@ -89,9 +118,11 @@ patches:
 # and a missing FX key is a safe failure anyway (`openexchangerates_app_id`
 # defaults to "" and conversion simply goes quiet).
 #
-# mcp-server also consumes existingSecret in the chart, but `mcpServer.enabled`
-# is false so it never renders. If it is ever enabled, it needs securo-postgres
-# and does not need the FX key.
+# mcp-server was enabled on 2026-08-25 and this prediction held exactly: it
+# consumes existingSecret in the chart, needs securo-postgres, and has no use
+# for the FX key. Its patch is below, alongside the other three workloads.
+# mcp-server talks to Postgres directly (backend/mcp_server/main.py imports
+# async_session_maker), so without DATABASE_URL every tool call fails.
   - target:
       kind: Deployment
       name: securo-backend
@@ -149,6 +180,15 @@ patches:
   - target:
       kind: Job
       name: securo-migration
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-postgres
+  - target:
+      kind: Deployment
+      name: securo-mcp-server
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/envFrom/-

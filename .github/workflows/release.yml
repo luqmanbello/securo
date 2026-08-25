@@ -226,12 +226,48 @@ jobs:
             exit 1
           fi
 
-          # mcpServer.enabled is false in deploy/values.yaml by deliberate
-          # choice (agents/LLM feature, off). Its arrival must be a reviewed
-          # change to that file, never a side effect of a chart bump that
-          # quietly changes a default.
-          if grep -n "component: mcp-server" deploy/manifests.yaml; then
-            echo "::error::deploy/manifests.yaml contains an mcp-server resource; mcpServer.enabled must stay false."
+          # mcpServer.enabled was turned ON 2026-08-25 for the agents feature.
+          # The old check here asserted the opposite -- that no mcp-server
+          # existed -- so that enabling it could not happen as a side effect
+          # of a chart bump. That intent is kept, inverted: the component must
+          # now be present, so a chart change that silently drops it fails
+          # rather than quietly disabling the feature.
+          if ! grep -q "component: mcp-server" deploy/manifests.yaml; then
+            echo "::error::deploy/manifests.yaml has no mcp-server resource; mcpServer.enabled must stay true while the agents feature is on."
+            exit 1
+          fi
+
+          # The chart welds a public /mcp HTTPRoute rule to mcpServer.enabled
+          # (charts/securo/templates/common/httproute.yaml) and offers no
+          # separate toggle. deploy/kustomization.yaml removes it with a
+          # POSITIONAL patch on /spec/rules/1, so the order of the rendered
+          # rules is load-bearing: if the chart ever reorders or inserts a
+          # rule, that patch would delete the wrong one -- most likely the
+          # frontend catch-all, taking the entire UI off the Gateway with
+          # every pod still Healthy.
+          #
+          # Two checks, and together they are the outcome rather than a proxy
+          # for it. Kustomize is deterministic, so "the route has exactly two
+          # rules, /mcp second" plus "the remove patch is present" entails
+          # "the applied route has no /mcp". Asserted with grep against the
+          # rendered chart, matching how every other check in this step
+          # works -- no yq, no kubectl, nothing this runner has to install.
+          ROUTE=$(awk '/^# Source: securo\/templates\/common\/httproute.yaml/,/^---$/' deploy/manifests.yaml)
+
+          RULE_COUNT=$(printf '%s\n' "$ROUTE" | grep -c "^    - matches:")
+          if [ "$RULE_COUNT" != "2" ]; then
+            echo "::error::HTTPRoute has $RULE_COUNT rules, expected 2. deploy/kustomization.yaml removes /spec/rules/1 assuming rule 1 is /mcp; with a different shape it would remove the wrong rule."
+            exit 1
+          fi
+
+          PATHS=$(printf '%s\n' "$ROUTE" | grep "value: /" | awk '{print $2}' | paste -sd, -)
+          if [ "$PATHS" != "/,/mcp" ]; then
+            echo "::error::HTTPRoute paths are '$PATHS', expected '/,/mcp'. The kustomize patch would remove the wrong rule."
+            exit 1
+          fi
+
+          if ! grep -q "path: /spec/rules/1" deploy/kustomization.yaml; then
+            echo "::error::deploy/kustomization.yaml no longer removes /spec/rules/1; enabling mcpServer would publish /mcp on the Gateway."
             exit 1
           fi
 

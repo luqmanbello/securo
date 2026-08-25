@@ -131,6 +131,19 @@ spec:
         - ports:
             - port: "6379"
               protocol: TCP
+    # The agent loop runs in the backend (app/agents/runtime/executor.py is
+    # driven from app/agents/api/), so this is the only workload that calls
+    # the MCP server. celery-worker deliberately gets no such rule: its only
+    # agents job is knowledge ingestion (app/agents/tasks/ingest.py), which
+    # embeds and writes, and never calls a tool.
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: mcp-server
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
     # On-demand FX lookups (config.fxSyncMode="on_demand" hits
     # openexchangerates.org synchronously from a user request) and asset
     # price search (backend/app/services/asset_service.py calls Yahoo
@@ -268,6 +281,13 @@ spec:
         - matchLabels:
             app.kubernetes.io/name: securo
             app.kubernetes.io/component: migration
+        # mcp-server, added 2026-08-25 with the agents feature. It is not a
+        # proxy in front of the backend: backend/mcp_server/main.py imports
+        # async_session_maker and opens its own session per tool call, so it
+        # is a fourth first-class database client.
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: mcp-server
       toPorts:
         - ports:
             - port: "5432"
@@ -323,4 +343,61 @@ spec:
             - port: "53"
               protocol: UDP
             - port: "53"
+              protocol: TCP
+
+---
+# mcp-server: serves the agent's tools over JSON-RPC. Added 2026-08-25 with
+# the agents feature.
+#
+# Its ingress is a single source on purpose. The chart publishes a /mcp route
+# on the Gateway whenever this component is enabled, which would make the
+# `host` entity a legitimate ingress source -- and that route is deliberately
+# removed in kustomization.yaml, so it is not one. If /mcp is ever restored,
+# this policy must grow `fromEntities: [ingress]` in the same change, or the
+# route will exist and silently fail.
+#
+# It gets NO internet egress, and that is the load-bearing part. The tools in
+# backend/mcp_server/tools/ read and write transactions, accounts, budgets and
+# payees straight from the database; the LLM call that decides which tool to
+# invoke happens in the BACKEND, not here. So this pod has every reason to
+# reach Postgres and none at all to reach the outside world. Denying it egress
+# means a flaw in tool handling cannot become exfiltration -- the data can be
+# read, but there is nowhere to send it.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: securo-mcp-server
+  namespace: securo
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: securo
+      app.kubernetes.io/component: mcp-server
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: backend
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: postgresql
+      toPorts:
+        - ports:
+            - port: "5432"
               protocol: TCP
