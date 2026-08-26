@@ -43,6 +43,7 @@ from app.providers.accessbank import (
     _encrypt_password,
     _token_claims,
 )
+from app.providers import _PROVIDERS, all_known_providers, get_provider, register_provider
 from app.providers.base import ProviderRateLimited, ProviderUserActionRequired, mask_last4
 
 
@@ -1030,7 +1031,6 @@ async def test_get_transactions_survives_a_raw_float_in_the_payload():
     """The bank sends bare JSON numbers. Decoding must produce Decimal, so an
     amount that has no exact float representation must survive intact."""
     key = _make_key(2048)
-    seen: list[dict] = []
 
     doc = _config_doc(key.public_key())
     token = _jwt({"customerId": "1", "userId": "theuserid"})
@@ -1099,8 +1099,6 @@ async def test_get_transactions_rejects_a_non_dict_response():
             await AccessBankProvider().get_transactions(_CREDS, "9876543210")
 
 
-from app.providers import _PROVIDERS, all_known_providers, get_provider, register_provider
-
 
 @pytest.fixture(autouse=True)
 def _clean_accessbank_registration():
@@ -1110,10 +1108,9 @@ def _clean_accessbank_registration():
     auto-registered (see `app/providers/__init__.py`'s
     `_auto_register_providers`, gated on `settings.accessbank_enabled`) —
     mirrors `_clean_registry` in `tests/test_providers.py`."""
-    had_entry = "accessbank" in _PROVIDERS
     previous = _PROVIDERS.get("accessbank")
     yield
-    if had_entry:
+    if previous is not None:
         _PROVIDERS["accessbank"] = previous
     else:
         _PROVIDERS.pop("accessbank", None)

@@ -3,6 +3,7 @@ import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
   User,
   AdminUser,
+  AutoCategorizeResult,
   AdminUserList,
   Passkey,
   PasskeyOptionsResponse,
@@ -554,6 +555,10 @@ export const transactions = {
       transaction_ids: transactionIds,
       category_id: categoryId,
     })
+    return data
+  },
+  autoCategorize: async (): Promise<AutoCategorizeResult> => {
+    const { data } = await api.post('/transactions/auto-categorize')
     return data
   },
   bulkAddTags: async (transactionIds: string[], tags: string[]): Promise<{ updated: number }> => {

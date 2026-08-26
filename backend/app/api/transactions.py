@@ -17,7 +17,7 @@ from app.core.workspace_context import (
 )
 from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionUpdate, TransferCreate, TransferRead
 from app.schemas.transaction_calendar import TransactionCalendarResponse
-from app.services import transaction_service
+from app.services import auto_categorize_service, transaction_service
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.transaction_calendar_service import get_transaction_calendar
 
@@ -241,6 +241,24 @@ async def bulk_categorize(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return {"updated": count}
+
+
+@router.post("/auto-categorize")
+async def auto_categorize(
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Categorize everything rules missed, using the configured LLM.
+
+    Synchronous on purpose: the caller is a user who just clicked a button
+    and wants the badge to change. The batch is capped and the service
+    fails quiet, so the worst case is a fast no-op with a status the UI
+    can explain.
+    """
+    result = await auto_categorize_service.auto_categorize_workspace(
+        session, ctx.workspace.id, ctx.user_id
+    )
+    return result.as_dict()
 
 
 @router.patch("/bulk-add-tags")

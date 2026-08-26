@@ -57,6 +57,7 @@ celery_app.conf.beat_schedule = {
 
 celery_app.conf.include = [
     "app.tasks.sync_tasks",
+    "app.tasks.categorize_tasks",
     "app.tasks.recurring_tasks",
     "app.tasks.asset_tasks",
     "app.tasks.fx_rate_tasks",

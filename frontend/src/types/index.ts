@@ -615,6 +615,26 @@ export interface TransactionCalendarResponse {
   days: TransactionCalendarDay[]
 }
 
+/** Result of an LLM auto-categorization pass.
+ *  `status` is why nothing happened when `categorized` is 0 — the UI
+ *  needs it to tell the user whether to configure something or just
+ *  try again. */
+export interface AutoCategorizeResult {
+  status:
+    | 'ok'
+    | 'disabled'
+    | 'no_candidates'
+    | 'no_categories'
+    | 'no_provider'
+    | 'llm_error'
+    | 'unparseable'
+  considered: number
+  categorized: number
+  skipped_low_confidence: number
+  detail: string
+  by_category: Record<string, number>
+}
+
 export interface DashboardSummary {
   total_balance: Record<string, number>
   total_balance_primary: number
