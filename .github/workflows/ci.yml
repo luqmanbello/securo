@@ -10,6 +10,13 @@ jobs:
   backend-tests:
     name: Backend Tests
     runs-on: ubuntu-latest
+    env:
+      # The `secrets` context is not available in a step-level `if:` — using
+      # it there makes the whole workflow unparseable and no job runs at all.
+      # Job-level `env` may read secrets, and `env` may be read from a step
+      # `if:`, so this indirection is how the badge step below stays gated on
+      # having the token rather than on being a particular repository.
+      HAS_GIST_TOKEN: ${{ secrets.GIST_TOKEN != '' }}
     defaults:
       run:
         working-directory: backend
@@ -111,7 +118,7 @@ jobs:
       # that can never run and no way to enable it. Expect a one-line conflict
       # on this `if:` when 1a26ae0 is merged; keep this side.
       - name: Update coverage badge
-        if: secrets.GIST_TOKEN != '' && github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
+        if: env.HAS_GIST_TOKEN == 'true' && github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
         uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
