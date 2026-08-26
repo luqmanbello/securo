@@ -292,7 +292,14 @@
     "fxRateUsed": "Tipo de cambio: {{rate}}",
     "refreshRates": "Actualizar tipos FX",
     "ratesRefreshed": "Tipos FX actualizados",
-    "ratesError": "No se pudo actualizar los tipos FX"
+    "ratesError": "No se pudo actualizar los tipos FX",
+    "autoCategorize": "Categorizar automáticamente con IA",
+    "autoCategorizeRunning": "Categorizando…",
+    "autoCategorizeDone": "{{count}} categorizados automáticamente",
+    "autoCategorizeUnsure": "{{count}} quedan para ti: no había confianza suficiente",
+    "autoCategorizeNothing": "No se pudo categorizar nada automáticamente",
+    "autoCategorizeNoProvider": "Primero conecta un modelo de IA en Agentes",
+    "autoCategorizeDisabled": "La función de agentes está desactivada"
   },
   "transactions": {
     "title": "Transacciones",
@@ -695,7 +702,25 @@
         "description": "Bancos de EE. UU. e internacionales vía SimpleFIN Bridge"
       }
     },
-    "reconnected": "Banco reconectado correctamente"
+    "reconnected": "Banco reconectado correctamente",
+    "credentialsConnect": {
+      "defaultTitle": "Conectar con tus credenciales",
+      "defaultDescription": "Introduce tu identificador y contraseña de banca en línea para vincular tus cuentas.",
+      "userIdLabel": "Identificador",
+      "userIdPlaceholder": "Tu identificador de banca en línea",
+      "passwordLabel": "Contraseña",
+      "passwordPlaceholder": "Tu contraseña de banca en línea",
+      "privacyNote": "Estas son tus credenciales de banca en línea. Securo las usa solo en modo lectura, para obtener saldos y movimientos.",
+      "connect": "Conectar",
+      "connecting": "Conectando…",
+      "accessbank": {
+        "title": "Conectar con Access Bank",
+        "description": "Introduce tu identificador y contraseña de banca en línea de Access Bank para vincular tus cuentas."
+      },
+      "reconnectTitle": "Reconectar con credenciales nuevas",
+      "reconnectDescription": "Vuelve a introducir tu identificador y contraseña para renovar esta conexión en su sitio. Se conservan las cuentas, los movimientos, las categorías y las reglas existentes.",
+      "reconnect": "Reconectar"
+    }
   },
   "connections": {
     "settings": "Configuración de la conexión",

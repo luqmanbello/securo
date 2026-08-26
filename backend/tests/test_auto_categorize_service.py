@@ -543,3 +543,86 @@ async def test_temperature_is_low_so_repeat_runs_agree(
     await auto_categorize_workspace(session, test_workspace.id, test_user.id)
 
     assert provider.calls[-1]["temperature"] <= 0.2
+
+
+# --- Resolving which model to call ----------------------------------------
+
+
+async def _add_connection(session, user, *, name: str, is_default: bool = False):
+    from app.agents.models.connection import LlmConnection
+    from app.agents.services.crypto import encrypt
+
+    conn = LlmConnection(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        name=name,
+        kind="openai_compatible",
+        base_url="https://openrouter.ai/api/v1",
+        api_key_encrypted=encrypt("sk-test"),
+        default_model="deepseek/deepseek-v4-flash-0731",
+        is_default=is_default,
+    )
+    session.add(conn)
+    await session.commit()
+    return conn
+
+
+@pytest.mark.asyncio
+async def test_a_lone_connection_is_used_even_without_the_default_flag(
+    session, test_user
+):
+    """`is_default` is only set when someone ticks a box, and an agent that
+    points at a connection by id never forces it. One connection means
+    there is nothing to disambiguate."""
+    await _add_connection(session, test_user, name="My OpenRouter", is_default=False)
+
+    provider, model = await auto_categorize_service._provider_and_model_for_user(
+        session, test_user.id
+    )
+
+    assert provider is not None
+    assert model == "deepseek/deepseek-v4-flash-0731"
+
+
+@pytest.mark.asyncio
+async def test_the_default_flag_wins_when_several_connections_exist(
+    session, test_user
+):
+    await _add_connection(session, test_user, name="Local Ollama", is_default=False)
+    await _add_connection(session, test_user, name="Chosen", is_default=True)
+
+    provider, model = await auto_categorize_service._provider_and_model_for_user(
+        session, test_user.id
+    )
+
+    assert provider is not None
+
+
+@pytest.mark.asyncio
+async def test_several_connections_and_no_default_is_not_guessed(
+    session, test_user, monkeypatch
+):
+    """Picking one arbitrarily would silently spend the wrong provider's
+    money. Report no_provider and let the user choose."""
+    monkeypatch.delenv("AGENTS_DEFAULT_PROVIDER", raising=False)
+    await _add_connection(session, test_user, name="One", is_default=False)
+    await _add_connection(session, test_user, name="Two", is_default=False)
+
+    provider, _model = await auto_categorize_service._provider_and_model_for_user(
+        session, test_user.id
+    )
+
+    assert provider is None
+
+
+@pytest.mark.asyncio
+async def test_no_connection_and_no_env_default_resolves_to_nothing(
+    session, test_user, monkeypatch
+):
+    monkeypatch.delenv("AGENTS_DEFAULT_PROVIDER", raising=False)
+
+    provider, _model = await auto_categorize_service._provider_and_model_for_user(
+        session, test_user.id
+    )
+
+    assert provider is None

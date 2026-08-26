@@ -259,15 +259,36 @@ async def _provider_and_model_for_user(session: AsyncSession, user_id: uuid.UUID
     """Resolve (provider, model) for a background run.
 
     Mirrors the executor's resolution order minus the per-agent step,
-    since no agent is involved here: the user's default connection, then
-    the instance-wide env defaults. Kept as one function so tests can
+    since no agent is involved here. Kept as one function so tests can
     monkey-patch a single seam.
+
+    The sole-connection step matters more than it looks. `is_default` is
+    only set when a user explicitly ticks the box, and most people who
+    configure one connection never do — their agent points at it by
+    `connection_id`, so nothing ever forced the flag on. Without this
+    fallback the feature would report `no_provider` on exactly the setup
+    it was written for, and look broken rather than unconfigured.
     """
     import os
 
+    from sqlalchemy import func, select as _select
+
+    from app.agents.models.connection import LlmConnection
     from app.agents.services import connection_service
 
     conn = await connection_service.get_default_connection(session, user_id)
+    if conn is None:
+        count = await session.scalar(
+            _select(func.count())
+            .select_from(LlmConnection)
+            .where(LlmConnection.user_id == user_id)
+        )
+        if count == 1:
+            conn = (
+                await session.execute(
+                    _select(LlmConnection).where(LlmConnection.user_id == user_id)
+                )
+            ).scalar_one_or_none()
     if conn is not None:
         provider = connection_service.build_provider_for_connection(conn)
         model = conn.default_model or os.getenv("AGENTS_DEFAULT_MODEL", "")

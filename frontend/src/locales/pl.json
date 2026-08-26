@@ -298,7 +298,14 @@
     "fxRateUsed": "Kurs FX: {{rate}}",
     "refreshRates": "Odśwież kursy FX",
     "ratesRefreshed": "Zaktualizowano kursy FX",
-    "ratesError": "Nie udało się zaktualizować kursów FX"
+    "ratesError": "Nie udało się zaktualizować kursów FX",
+    "autoCategorize": "Kategoryzuj automatycznie z AI",
+    "autoCategorizeRunning": "Kategoryzowanie…",
+    "autoCategorizeDone": "Skategoryzowano automatycznie: {{count}}",
+    "autoCategorizeUnsure": "Pozostawiono dla Ciebie: {{count}} — zbyt mała pewność",
+    "autoCategorizeNothing": "Nie udało się nic skategoryzować automatycznie",
+    "autoCategorizeNoProvider": "Najpierw podłącz model AI w sekcji Agenci",
+    "autoCategorizeDisabled": "Funkcja agentów jest wyłączona"
   },
   "transactions": {
     "title": "Transakcje",
@@ -737,7 +744,25 @@
         "description": "Banki w USA i międzynarodowe przez SimpleFIN Bridge"
       }
     },
-    "reconnected": "Bank połączony ponownie"
+    "reconnected": "Bank połączony ponownie",
+    "credentialsConnect": {
+      "defaultTitle": "Połącz przy użyciu swoich danych logowania",
+      "defaultDescription": "Podaj identyfikator i hasło do bankowości internetowej, aby połączyć swoje konta.",
+      "userIdLabel": "Identyfikator",
+      "userIdPlaceholder": "Twój identyfikator bankowości internetowej",
+      "passwordLabel": "Hasło",
+      "passwordPlaceholder": "Twoje hasło do bankowości internetowej",
+      "privacyNote": "To są Twoje dane logowania do bankowości internetowej. Securo używa ich tylko do odczytu, aby pobrać salda i transakcje.",
+      "connect": "Połącz",
+      "connecting": "Łączenie…",
+      "accessbank": {
+        "title": "Połącz przez Access Bank",
+        "description": "Podaj identyfikator i hasło do bankowości internetowej Access Bank, aby połączyć swoje konta."
+      },
+      "reconnectTitle": "Połącz ponownie przy użyciu nowych danych",
+      "reconnectDescription": "Podaj ponownie identyfikator i hasło, aby odnowić to połączenie w tym samym miejscu. Istniejące konta, transakcje, kategorie i reguły zostaną zachowane.",
+      "reconnect": "Połącz ponownie"
+    }
   },
   "connections": {
     "settings": "Ustawienia połączenia",

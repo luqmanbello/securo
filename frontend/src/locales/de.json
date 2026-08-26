@@ -292,7 +292,14 @@
     "fxRateUsed": "Wechselkurs: {{rate}}",
     "refreshRates": "Wechselkurse aktualisieren",
     "ratesRefreshed": "Wechselkurse aktualisiert",
-    "ratesError": "Fehler beim Aktualisieren der Wechselkurse"
+    "ratesError": "Fehler beim Aktualisieren der Wechselkurse",
+    "autoCategorize": "Automatisch mit KI kategorisieren",
+    "autoCategorizeRunning": "Kategorisiere…",
+    "autoCategorizeDone": "{{count}} automatisch kategorisiert",
+    "autoCategorizeUnsure": "{{count}} für Sie übrig — nicht sicher genug",
+    "autoCategorizeNothing": "Es konnte nichts automatisch kategorisiert werden",
+    "autoCategorizeNoProvider": "Verbinden Sie zuerst ein KI-Modell unter Agenten",
+    "autoCategorizeDisabled": "Die Agenten-Funktion ist deaktiviert"
   },
   "transactions": {
     "title": "Transaktionen",
@@ -695,7 +702,25 @@
         "description": "US-amerikanische und internationale Banken via SimpleFIN Bridge"
       }
     },
-    "reconnected": "Bank erfolgreich erneut verbunden"
+    "reconnected": "Bank erfolgreich erneut verbunden",
+    "credentialsConnect": {
+      "defaultTitle": "Mit Zugangsdaten verbinden",
+      "defaultDescription": "Geben Sie Ihre Online-Banking-Benutzerkennung und Ihr Passwort ein, um Ihre Konten zu verknüpfen.",
+      "userIdLabel": "Benutzerkennung",
+      "userIdPlaceholder": "Ihre Online-Banking-Benutzerkennung",
+      "passwordLabel": "Passwort",
+      "passwordPlaceholder": "Ihr Online-Banking-Passwort",
+      "privacyNote": "Dies sind Ihre Online-Banking-Zugangsdaten. Securo verwendet sie nur lesend, um Salden und Umsätze abzurufen.",
+      "connect": "Verbinden",
+      "connecting": "Verbinde…",
+      "accessbank": {
+        "title": "Über Access Bank verbinden",
+        "description": "Geben Sie Ihre Access-Bank-Benutzerkennung und Ihr Online-Banking-Passwort ein, um Ihre Konten zu verknüpfen."
+      },
+      "reconnectTitle": "Mit neuen Zugangsdaten erneut verbinden",
+      "reconnectDescription": "Geben Sie Benutzerkennung und Passwort erneut ein, um diese Verbindung an Ort und Stelle zu erneuern. Vorhandene Konten, Umsätze, Kategorien und Regeln bleiben erhalten.",
+      "reconnect": "Erneut verbinden"
+    }
   },
   "connections": {
     "settings": "Verbindungseinstellungen",

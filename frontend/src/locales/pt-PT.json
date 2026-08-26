@@ -292,7 +292,14 @@
     "fxRateUsed": "Taxa de câmbio: {{rate}}",
     "refreshRates": "Atualizar taxas de câmbio",
     "ratesRefreshed": "Taxas de câmbio atualizadas",
-    "ratesError": "Erro ao atualizar taxas de câmbio"
+    "ratesError": "Erro ao atualizar taxas de câmbio",
+    "autoCategorize": "Categorizar automaticamente com IA",
+    "autoCategorizeRunning": "A categorizar…",
+    "autoCategorizeDone": "{{count}} categorizados automaticamente",
+    "autoCategorizeUnsure": "{{count}} deixados para si — confiança insuficiente",
+    "autoCategorizeNothing": "Não foi possível categorizar nada automaticamente",
+    "autoCategorizeNoProvider": "Ligue primeiro um modelo de IA em Agentes",
+    "autoCategorizeDisabled": "A funcionalidade de agentes está desativada"
   },
   "transactions": {
     "title": "Transações",
@@ -695,7 +702,25 @@
         "description": "Bancos dos EUA e internacionais via SimpleFIN Bridge"
       }
     },
-    "reconnected": "Banco reconectado com sucesso"
+    "reconnected": "Banco reconectado com sucesso",
+    "credentialsConnect": {
+      "defaultTitle": "Ligar com as suas credenciais",
+      "defaultDescription": "Introduza o seu ID de utilizador e palavra-passe do homebanking para associar as suas contas.",
+      "userIdLabel": "ID de utilizador",
+      "userIdPlaceholder": "O seu ID de utilizador do homebanking",
+      "passwordLabel": "Palavra-passe",
+      "passwordPlaceholder": "A sua palavra-passe do homebanking",
+      "privacyNote": "Estas são as suas credenciais do homebanking. O Securo usa-as apenas para leitura, para obter saldos e movimentos.",
+      "connect": "Ligar",
+      "connecting": "A ligar…",
+      "accessbank": {
+        "title": "Ligar através do Access Bank",
+        "description": "Introduza o seu ID de utilizador e palavra-passe do homebanking do Access Bank para associar as suas contas."
+      },
+      "reconnectTitle": "Voltar a ligar com novas credenciais",
+      "reconnectDescription": "Introduza novamente o seu ID de utilizador e palavra-passe para renovar esta ligação no local. As contas, movimentos, categorias e regras existentes são preservados.",
+      "reconnect": "Voltar a ligar"
+    }
   },
   "connections": {
     "settings": "Definições da ligação",
