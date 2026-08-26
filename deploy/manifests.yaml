@@ -322,7 +322,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:5b7822a51d21a5ae5bbded85b5cd0b3eccaf98fbdae68e5a0919c7c1b75c0853"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:8ef32d60341cbdb9536e4c8fe340bda0bdf69722d963adfa231e99bb9b5b99f1"
           imagePullPolicy: IfNotPresent
           command:
             - uvicorn
@@ -408,7 +408,7 @@ spec:
     spec:
       containers:
         - name: celery-beat
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:5b7822a51d21a5ae5bbded85b5cd0b3eccaf98fbdae68e5a0919c7c1b75c0853"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:8ef32d60341cbdb9536e4c8fe340bda0bdf69722d963adfa231e99bb9b5b99f1"
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -545,7 +545,7 @@ spec:
     spec:
       containers:
         - name: mcp-server
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:5b7822a51d21a5ae5bbded85b5cd0b3eccaf98fbdae68e5a0919c7c1b75c0853"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:8ef32d60341cbdb9536e4c8fe340bda0bdf69722d963adfa231e99bb9b5b99f1"
           imagePullPolicy: IfNotPresent
           command:
             - uvicorn
@@ -631,7 +631,7 @@ spec:
     spec:
       containers:
         - name: celery-worker
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:5b7822a51d21a5ae5bbded85b5cd0b3eccaf98fbdae68e5a0919c7c1b75c0853"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:8ef32d60341cbdb9536e4c8fe340bda0bdf69722d963adfa231e99bb9b5b99f1"
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -837,7 +837,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: migration
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:5b7822a51d21a5ae5bbded85b5cd0b3eccaf98fbdae68e5a0919c7c1b75c0853"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:8ef32d60341cbdb9536e4c8fe340bda0bdf69722d963adfa231e99bb9b5b99f1"
           imagePullPolicy: IfNotPresent
           command:
             - sh
