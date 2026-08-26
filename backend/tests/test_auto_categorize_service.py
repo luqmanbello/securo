@@ -626,3 +626,59 @@ async def test_no_connection_and_no_env_default_resolves_to_nothing(
     )
 
     assert provider is None
+
+
+# --- Which field holds the merchant --------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_both_payee_and_description_reach_the_model(
+    session, test_user, test_workspace, test_account, test_categories, monkeypatch
+):
+    """Access Bank puts the account holder's own name in every row's payee
+    and the merchant in the description. Preferring payee shipped once and
+    filed two Amazon purchases as Food & Dining."""
+    await _add_tx(
+        session, test_user, test_account,
+        payee="LUQMAN OLALEKAN BELLO",
+        description="WEB PYMT WWW.AMAZON.* XI86B7KL5 LUXEMBOURG LU",
+        amount="63.63",
+    )
+    provider = _install_provider(monkeypatch, ScriptedProvider(_reply([])))
+
+    await auto_categorize_workspace(session, test_workspace.id, test_user.id)
+    prompt = provider.last_prompt
+
+    assert "AMAZON" in prompt, "the merchant must reach the model"
+    assert "LUQMAN OLALEKAN BELLO" in prompt
+
+
+@pytest.mark.asyncio
+async def test_examples_also_carry_both_fields(
+    session, test_user, test_workspace, test_account, test_categories, monkeypatch
+):
+    """An example keyed on the account holder's name alone teaches the model
+    to file every row from that account into one category."""
+    await _add_tx(
+        session, test_user, test_account,
+        payee="LUQMAN OLALEKAN BELLO",
+        description="COMMISSION HANDLING CHARGE",
+        category_id=test_categories[0].id,
+    )
+    await _add_tx(session, test_user, test_account, description="NEW ROW")
+    provider = _install_provider(monkeypatch, ScriptedProvider(_reply([])))
+
+    await auto_categorize_workspace(session, test_workspace.id, test_user.id)
+
+    assert "COMMISSION HANDLING CHARGE" in provider.last_prompt
+
+
+def test_label_does_not_repeat_a_field_that_equals_the_other():
+    from app.services.auto_categorize_service import _label
+
+    assert _label("REWE", "REWE") == "REWE"
+    assert _label("REWE", "rewe") == "REWE"
+    assert _label("Il Gelataio", "") == "Il Gelataio"
+    assert _label("", "ATM WITHDRAWAL") == "ATM WITHDRAWAL"
+    assert _label(None, None) == ""
+    assert _label("HOLDER", "AMAZON LU") == "HOLDER — AMAZON LU"

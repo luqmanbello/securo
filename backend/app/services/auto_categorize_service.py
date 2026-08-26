@@ -137,10 +137,36 @@ async def _load_categories(
     return list(result.scalars().all())
 
 
+def _label(payee: Optional[str], description: Optional[str]) -> str:
+    """Identify a transaction using both fields, never one instead of the other.
+
+    Which field holds the merchant is provider-specific. Enable Banking puts
+    it in `payee` ("Il Gelataio"), and `description` is often noise. Access
+    Bank puts the *account holder's own name* in `payee` for every row and
+    the merchant in `description` ("WEB PYMT WWW.AMAZON.* LUXEMBOURG LU").
+
+    Preferring `payee` shipped on 2026-08-26 and immediately mis-filed four
+    Access Bank rows — two Amazon purchases, a PayPal payment and a travel
+    -allowance fee — as Food & Dining, because every one of them looked to
+    the model like the same opaque personal name. Confidence did not save it:
+    an earlier row with that same payee was already filed under Food &
+    Dining, so the examples actively taught the wrong answer. A safeguard
+    against uncertainty cannot catch a model that is consistently wrong.
+
+    So concatenate. A redundant field costs a few tokens; a missing one costs
+    a wrong category the user has to find and fix by hand.
+    """
+    p = (payee or "").strip()
+    d = (description or "").strip()
+    if p and d and p.lower() != d.lower():
+        return f"{p} — {d}"
+    return p or d
+
+
 async def _load_examples(
     session: AsyncSession, workspace_id: uuid.UUID, limit: int = MAX_EXAMPLES
 ) -> list[tuple[str, uuid.UUID]]:
-    """Recent (description, category_id) pairs the user already settled."""
+    """Recent (label, category_id) pairs the user already settled."""
     result = await session.execute(
         select(Transaction.description, Transaction.payee, Transaction.category_id)
         .where(
@@ -154,7 +180,7 @@ async def _load_examples(
     seen: set[str] = set()
     pairs: list[tuple[str, uuid.UUID]] = []
     for description, payee, category_id in result.all():
-        label = (payee or description or "").strip()
+        label = _label(payee, description)
         if not label or category_id is None:
             continue
         key = label.lower()
@@ -171,8 +197,7 @@ def _describe(tx: Transaction) -> str:
     """One compact line per transaction. Amount sign carries the direction,
     which is often the only signal distinguishing income from a refund."""
     parts = [str(tx.date)]
-    label = (tx.payee or tx.description or "").strip()
-    parts.append(label or "(no description)")
+    parts.append(_label(tx.payee, tx.description) or "(no description)")
     sign = "-" if (tx.type or "").lower() == "debit" else "+"
     parts.append(f"{sign}{abs(tx.amount)} {tx.currency}")
     if tx.notes:
