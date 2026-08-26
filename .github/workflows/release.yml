@@ -173,18 +173,34 @@ jobs:
           # worth's hand-written deployment.yaml -- these patterns match
           # helm template's actual output, not worth's.
           #
-          # backend's repository+tag is shared by 4 containers: the backend
-          # Deployment, the celery-worker Deployment, the celery-beat
-          # Deployment, and the one-shot migration Job (all four run
-          # `.Values.backend.image.repository`). frontend appears once. A
-          # count that doesn't match either number means the chart's
-          # templates changed shape (a container added/removed, or the
-          # image field's quoting changed) and the sed below would either
-          # silently miss a container or over-match -- fail loudly instead
-          # of shipping a manifest with a stale or half-pinned image.
+          # backend's repository+tag is shared by four always-present
+          # containers: the backend Deployment, the celery-worker Deployment,
+          # the celery-beat Deployment, and the one-shot migration Job (all
+          # run `.Values.backend.image.repository`). frontend appears once.
+          # The mcp-server Deployment runs the backend image too, but only
+          # when `mcpServer.enabled` is true -- so the expected count is 4 or
+          # 5 depending on a toggle the owner is entitled to flip. Derive it
+          # from what was actually rendered rather than hardcoding, and still
+          # fail loudly on any other number: a count outside that means the
+          # chart's templates changed shape (a container added/removed, or
+          # the image field's quoting changed) and the sed below would either
+          # silently miss a container or over-match -- fail loudly instead of
+          # shipping a manifest with a stale or half-pinned image.
+          #
+          # This guard hardcoded 4 until 2026-08-26, so re-enabling mcpServer
+          # in ecb7432 wedged the deploy job -- the same failure mode the /mcp
+          # routing check below was already rewritten to avoid, reintroduced
+          # one step over. An absolute assertion about something the owner can
+          # toggle is a trap whichever way it points; that applies to counting
+          # containers as much as to asserting a route.
+          if grep -q "component: mcp-server" deploy/manifests.yaml; then
+            backend_expected=5
+          else
+            backend_expected=4
+          fi
           backend_before=$(grep -c "image: \"${BACKEND_IMAGE}:" deploy/manifests.yaml || true)
-          if [[ "$backend_before" -ne 4 ]]; then
-            echo "::error::expected 4 managed ${BACKEND_IMAGE} image lines in deploy/manifests.yaml, found ${backend_before}"
+          if [[ "$backend_before" -ne "$backend_expected" ]]; then
+            echo "::error::expected ${backend_expected} managed ${BACKEND_IMAGE} image lines in deploy/manifests.yaml, found ${backend_before}"
             exit 1
           fi
           frontend_before=$(grep -c "image: \"${FRONTEND_IMAGE}:" deploy/manifests.yaml || true)
@@ -199,8 +215,8 @@ jobs:
             deploy/manifests.yaml
 
           backend_after=$(grep -c "image: \"${BACKEND_IMAGE}@sha256:" deploy/manifests.yaml || true)
-          if [[ "$backend_after" -ne 4 ]]; then
-            echo "::error::expected 4 digest-pinned ${BACKEND_IMAGE} image lines after substitution, found ${backend_after}"
+          if [[ "$backend_after" -ne "$backend_expected" ]]; then
+            echo "::error::expected ${backend_expected} digest-pinned ${BACKEND_IMAGE} image lines after substitution, found ${backend_after}"
             exit 1
           fi
           frontend_after=$(grep -c "image: \"${FRONTEND_IMAGE}@sha256:" deploy/manifests.yaml || true)
