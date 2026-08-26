@@ -100,8 +100,18 @@ jobs:
           COVERAGE=$(python -c "import xml.etree.ElementTree as ET; print(round(float(ET.parse('coverage.xml').getroot().attrib['line-rate']) * 100))")
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
 
+      # Gated on the secret rather than on a repository name. Forks have no
+      # GIST_TOKEN, so without this the whole Backend Tests job goes red on
+      # "Missing auth secret" *after* the tests have already passed -- which
+      # reads as a test failure and hid two real ones here for days.
+      #
+      # Upstream fixes this by hardcoding `github.repository ==
+      # 'securo-finance/securo'` (#667, 1a26ae0). Same effect, but it asserts
+      # who you are instead of what you have, so every fork inherits a step
+      # that can never run and no way to enable it. Expect a one-line conflict
+      # on this `if:` when 1a26ae0 is merged; keep this side.
       - name: Update coverage badge
-        if: github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
+        if: secrets.GIST_TOKEN != '' && github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
         uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
