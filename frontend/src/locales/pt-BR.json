@@ -292,7 +292,14 @@
     "fxRateUsed": "Taxa de câmbio: {{rate}}",
     "refreshRates": "Atualizar taxas de câmbio",
     "ratesRefreshed": "Taxas de câmbio atualizadas",
-    "ratesError": "Erro ao atualizar taxas de câmbio"
+    "ratesError": "Erro ao atualizar taxas de câmbio",
+    "autoCategorize": "Categorizar automaticamente com IA",
+    "autoCategorizeRunning": "Categorizando…",
+    "autoCategorizeDone": "{{count}} categorizadas automaticamente",
+    "autoCategorizeUnsure": "{{count}} deixadas para você — confiança insuficiente",
+    "autoCategorizeNothing": "Nada pôde ser categorizado automaticamente",
+    "autoCategorizeNoProvider": "Conecte um modelo de IA em Agentes primeiro",
+    "autoCategorizeDisabled": "O recurso de agentes está desativado"
   },
   "transactions": {
     "title": "Transações",
@@ -695,7 +702,25 @@
         "description": "Bancos dos EUA e internacionais via SimpleFIN Bridge"
       }
     },
-    "reconnected": "Banco reconectado com sucesso"
+    "reconnected": "Banco reconectado com sucesso",
+    "credentialsConnect": {
+      "defaultTitle": "Conectar com suas credenciais",
+      "defaultDescription": "Informe seu ID de usuário e senha do internet banking para vincular suas contas.",
+      "userIdLabel": "ID de usuário",
+      "userIdPlaceholder": "Seu ID de usuário do internet banking",
+      "passwordLabel": "Senha",
+      "passwordPlaceholder": "Sua senha do internet banking",
+      "privacyNote": "Estas são suas credenciais do internet banking. O Securo as usa apenas para leitura, para buscar saldos e transações.",
+      "connect": "Conectar",
+      "connecting": "Conectando…",
+      "accessbank": {
+        "title": "Conectar via Access Bank",
+        "description": "Informe seu ID de usuário e senha do internet banking do Access Bank para vincular suas contas."
+      },
+      "reconnectTitle": "Reconectar com novas credenciais",
+      "reconnectDescription": "Informe novamente seu ID de usuário e senha para renovar esta conexão no lugar. Contas, transações, categorias e regras existentes são preservadas.",
+      "reconnect": "Reconectar"
+    }
   },
   "connections": {
     "settings": "Configurações da conexão",

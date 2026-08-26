@@ -292,7 +292,14 @@
     "fxRateUsed": "Taux de change : {{rate}}",
     "refreshRates": "Actualiser les taux de change",
     "ratesRefreshed": "Taux de change mis à jour",
-    "ratesError": "Échec de la mise à jour des taux de change"
+    "ratesError": "Échec de la mise à jour des taux de change",
+    "autoCategorize": "Catégoriser automatiquement avec l'IA",
+    "autoCategorizeRunning": "Catégorisation…",
+    "autoCategorizeDone": "{{count}} catégorisées automatiquement",
+    "autoCategorizeUnsure": "{{count}} laissées pour vous — confiance insuffisante",
+    "autoCategorizeNothing": "Rien n'a pu être catégorisé automatiquement",
+    "autoCategorizeNoProvider": "Connectez d'abord un modèle d'IA dans Agents",
+    "autoCategorizeDisabled": "La fonctionnalité Agents est désactivée"
   },
   "transactions": {
     "title": "Transactions",
@@ -695,7 +702,25 @@
         "description": "Banques américaines et internationales via SimpleFIN Bridge"
       }
     },
-    "reconnected": "Banque reconnectée avec succès"
+    "reconnected": "Banque reconnectée avec succès",
+    "credentialsConnect": {
+      "defaultTitle": "Se connecter avec vos identifiants",
+      "defaultDescription": "Saisissez votre identifiant et votre mot de passe de banque en ligne pour relier vos comptes.",
+      "userIdLabel": "Identifiant",
+      "userIdPlaceholder": "Votre identifiant de banque en ligne",
+      "passwordLabel": "Mot de passe",
+      "passwordPlaceholder": "Votre mot de passe de banque en ligne",
+      "privacyNote": "Ce sont vos identifiants de banque en ligne. Securo les utilise en lecture seule, pour récupérer soldes et opérations.",
+      "connect": "Connecter",
+      "connecting": "Connexion…",
+      "accessbank": {
+        "title": "Se connecter via Access Bank",
+        "description": "Saisissez votre identifiant et votre mot de passe de banque en ligne Access Bank pour relier vos comptes."
+      },
+      "reconnectTitle": "Reconnecter avec de nouveaux identifiants",
+      "reconnectDescription": "Saisissez à nouveau votre identifiant et votre mot de passe pour renouveler cette connexion sur place. Les comptes, opérations, catégories et règles existants sont conservés.",
+      "reconnect": "Reconnecter"
+    }
   },
   "connections": {
     "settings": "Paramètres de connexion",

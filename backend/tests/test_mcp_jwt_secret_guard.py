@@ -28,7 +28,7 @@ _PLACEHOLDERS = ["", "change-me-in-production", "dev-mcp-secret-change-in-produc
 
 
 class _AgentSettings:
-    def __init__(self, secret: str, enabled: bool = True):
+    def __init__(self, secret: str | None, enabled: bool = True):
         self.mcp_jwt_secret = secret
         self.enabled = enabled
 
@@ -38,7 +38,9 @@ class _AppSettings:
         self.debug = debug
 
 
-def _run(secret: str, *, enabled: bool = True, debug: bool = False):
+# `secret` is Optional because a missing env var arrives as None, and
+# one test asserts the guard refuses that instead of raising TypeError.
+def _run(secret: str | None, *, enabled: bool = True, debug: bool = False):
     with patch(
         "app.agents.config.get_agent_settings",
         return_value=_AgentSettings(secret, enabled),

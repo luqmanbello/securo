@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { dashboard, transactions, budgets, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, goals as goalsApi, groups as groupsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -37,7 +38,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
+import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, Sparkles, Loader2 } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
@@ -271,6 +272,34 @@ export default function DashboardPage() {
       setDialogOpen(false)
       setEditingTx(null)
     },
+  })
+
+  const { agentsEnabled } = useFeatureFlags()
+
+  const autoCategorizeMutation = useMutation({
+    mutationFn: () => transactions.autoCategorize(),
+    onSuccess: (result) => {
+      if (result.categorized > 0) {
+        invalidateFinancialQueries(queryClient)
+        toast.success(t('dashboard.autoCategorizeDone', { count: result.categorized }))
+        // Anything the model wasn't sure about stays on the badge, so say
+        // so rather than letting the user wonder why it didn't reach zero.
+        if (result.skipped_low_confidence > 0) {
+          toast.info(t('dashboard.autoCategorizeUnsure', { count: result.skipped_low_confidence }))
+        }
+        return
+      }
+      if (result.status === 'no_provider') {
+        toast.error(t('dashboard.autoCategorizeNoProvider'))
+      } else if (result.status === 'disabled') {
+        toast.error(t('dashboard.autoCategorizeDisabled'))
+      } else if (result.skipped_low_confidence > 0) {
+        toast.info(t('dashboard.autoCategorizeUnsure', { count: result.skipped_low_confidence }))
+      } else {
+        toast.info(t('dashboard.autoCategorizeNothing'))
+      }
+    },
+    onError: () => toast.error(t('common.error')),
   })
 
   const createRuleMutation = useMutation({
@@ -730,6 +759,7 @@ export default function DashboardPage() {
             {summaryLoading ? (
               <Skeleton className="h-16 w-16 rounded-full" />
             ) : uncategorizedCount > 0 ? (
+              <>
               <div
                 className="cursor-pointer hover:opacity-80 transition-opacity"
                 onClick={() => setDrillDown({
@@ -754,6 +784,24 @@ export default function DashboardPage() {
                   {t('dashboard.categorizeNow')} &rarr;
                 </p>
               </div>
+                {agentsEnabled && (
+                  <button
+                    type="button"
+                    disabled={autoCategorizeMutation.isPending}
+                    onClick={() => autoCategorizeMutation.mutate()}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {autoCategorizeMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    {autoCategorizeMutation.isPending
+                      ? t('dashboard.autoCategorizeRunning')
+                      : t('dashboard.autoCategorize')}
+                  </button>
+                )}
+              </>
             ) : (
               <div>
                 <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-1.5" />

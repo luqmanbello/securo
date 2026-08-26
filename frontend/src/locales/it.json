@@ -292,7 +292,14 @@
     "fxRateUsed": "Tasso di cambio: {{rate}}",
     "refreshRates": "Aggiorna i tassi di cambio",
     "ratesRefreshed": "Tassi di cambio aggiornati",
-    "ratesError": "Impossibile aggiornare i tassi di cambio"
+    "ratesError": "Impossibile aggiornare i tassi di cambio",
+    "autoCategorize": "Categorizza automaticamente con l'IA",
+    "autoCategorizeRunning": "Categorizzazione…",
+    "autoCategorizeDone": "{{count}} categorizzate automaticamente",
+    "autoCategorizeUnsure": "{{count}} lasciate a te — confidenza insufficiente",
+    "autoCategorizeNothing": "Non è stato possibile categorizzare nulla automaticamente",
+    "autoCategorizeNoProvider": "Collega prima un modello IA in Agenti",
+    "autoCategorizeDisabled": "La funzione Agenti è disattivata"
   },
   "transactions": {
     "title": "Transazioni",
@@ -695,7 +702,25 @@
         "description": "Banche statunitensi e internazionali tramite SimpleFIN Bridge"
       }
     },
-    "reconnected": "Banca riconnessa correttamente"
+    "reconnected": "Banca riconnessa correttamente",
+    "credentialsConnect": {
+      "defaultTitle": "Connetti con le tue credenziali",
+      "defaultDescription": "Inserisci ID utente e password dell'internet banking per collegare i tuoi conti.",
+      "userIdLabel": "ID utente",
+      "userIdPlaceholder": "Il tuo ID utente dell'internet banking",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "La tua password dell'internet banking",
+      "privacyNote": "Queste sono le credenziali del tuo internet banking. Securo le usa in sola lettura, per recuperare saldi e movimenti.",
+      "connect": "Connetti",
+      "connecting": "Connessione…",
+      "accessbank": {
+        "title": "Connetti tramite Access Bank",
+        "description": "Inserisci ID utente e password dell'internet banking Access Bank per collegare i tuoi conti."
+      },
+      "reconnectTitle": "Riconnetti con nuove credenziali",
+      "reconnectDescription": "Reinserisci ID utente e password per rinnovare questa connessione al suo posto. Conti, movimenti, categorie e regole esistenti vengono mantenuti.",
+      "reconnect": "Riconnetti"
+    }
   },
   "connections": {
     "settings": "Impostazioni connessione",
