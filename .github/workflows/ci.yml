@@ -115,8 +115,8 @@ jobs:
       # Upstream fixes this by hardcoding `github.repository ==
       # 'securo-finance/securo'` (#667, 1a26ae0). Same effect, but it asserts
       # who you are instead of what you have, so every fork inherits a step
-      # that can never run and no way to enable it. Expect a one-line conflict
-      # on this `if:` when 1a26ae0 is merged; keep this side.
+      # that can never run and no way to enable it. 1a26ae0 was merged on
+      # 2026-08-28 and this line conflicted as expected; ours was kept.
       - name: Update coverage badge
         if: env.HAS_GIST_TOKEN == 'true' && github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
         uses: schneegans/dynamic-badges-action@v1.9.0
@@ -129,6 +129,19 @@ jobs:
           valColorRange: ${{ steps.coverage.outputs.percentage }}
           minColorRange: 50
           maxColorRange: 90
+
+  migration-chain:
+    name: Migration Chain
+    runs-on: ubuntu-latest
+
+    steps:
+      # No `ref:` override, so on a pull request this is the merge with the
+      # base branch. That is the whole point: a revision id that only clashes
+      # once both sides are together is visible here and nowhere else.
+      - uses: actions/checkout@v7
+
+      - name: Check the Alembic revision chain
+        run: python3 backend/scripts/check_migration_chain.py
 
   frontend-checks:
     name: Frontend Checks
