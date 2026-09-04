@@ -340,3 +340,30 @@ the ConfigMap, or any Secret.
 Embeddings stay `native` (fastembed, in-process): OpenRouter has no
 `/v1/embeddings` endpoint. The ~120MB ONNX model downloads to the
 embedding-models PVC on first knowledge-base use and costs nothing until then.
+
+## Release tags: `+securo.N`, never `-securo-N`
+
+Fork releases are tagged `v<upstream version>+securo.<n>` — `v0.15.0+securo.2`,
+not `v0.15.0-securo-1`. The separator is load-bearing.
+
+`release.yml` injects the tag verbatim as `VITE_APP_VERSION`, so the tag *is*
+the version the UI reports. `frontend/src/hooks/use-latest-release.ts` polls
+**upstream's** releases (`securo-finance/securo`) and
+`frontend/src/lib/semver.ts` compares the two.
+
+Under semver, everything after `-` is a **prerelease** and sorts *below* the
+plain version, while everything after `+` is **build metadata** and is ignored
+for precedence entirely. So `0.15.0-securo-1` reads as "an early draft of
+0.15.0", upstream's plain `0.15.0` always sorts higher, and the Server update
+dialog announced "New version available: v0.15.0" while running exactly that
+upstream code — on every load, with an upgrade command that does not even apply
+to this deployment. `0.15.0+securo.2` compares equal to `0.15.0`, so the dialog
+stays quiet, and a genuine `0.15.1` or `0.16.0` still raises it.
+
+`frontend/src/lib/semver.test.ts` pins all three behaviours, including the old
+dash format, so the regression cannot return silently.
+
+Checked, not assumed: `helm package --version 0.15.0+securo.2` keeps the `+` in
+the archive filename, so `build-helm`'s `helm push securo-$VERSION.tgz` still
+finds it. OCI tags cannot hold a `+`, and Helm rewrites it to `_` when pushing —
+that is Helm's own behaviour, not something this repo configures.

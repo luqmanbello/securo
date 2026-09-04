@@ -105,3 +105,35 @@ describe('isUpdateAvailable', () => {
     expect(isUpdateAvailable('1.0.0', undefined)).toBe(false)
   })
 })
+
+describe('this fork\'s release tag format', () => {
+  // The update banner compares APP_VERSION — which is the release tag verbatim,
+  // injected as VITE_APP_VERSION in release.yml — against upstream's latest
+  // release, because use-latest-release.ts polls securo-finance/securo. So the
+  // tag this fork ships decides whether the banner is right or noise.
+
+  it('marks a fork build as the same version as the upstream release it tracks', () => {
+    // Build metadata after `+` is not part of semver precedence, so a fork
+    // build of 0.15.0 compares EQUAL to upstream 0.15.0 and the banner stays
+    // quiet. This is the whole reason the tag uses `+` and not `-`.
+    expect(isUpdateAvailable('v0.15.0+securo.2', 'v0.15.0')).toBe(false)
+    expect(parseSemver('v0.15.0+securo.2')?.prerelease).toEqual([])
+  })
+
+  it('still offers a genuinely newer upstream release', () => {
+    // The banner must keep working: build metadata must not suppress a real
+    // upstream version bump.
+    expect(isUpdateAvailable('v0.15.0+securo.2', 'v0.16.0')).toBe(true)
+    expect(isUpdateAvailable('v0.15.0+securo.2', 'v0.15.1')).toBe(true)
+  })
+
+  it('shows why the old `-securo-N` tag nagged on every load', () => {
+    // Tags up to v0.15.0-securo-1 used a dash, which semver reads as a
+    // PRERELEASE — i.e. "an early draft of 0.15.0" — so upstream's plain
+    // 0.15.0 always sorted higher and the dialog claimed an update was
+    // available while running the very same upstream code. Kept as a test so
+    // nobody reintroduces the dash.
+    expect(parseSemver('v0.15.0-securo-1')?.prerelease).toEqual(['securo-1'])
+    expect(isUpdateAvailable('v0.15.0-securo-1', 'v0.15.0')).toBe(true)
+  })
+})
