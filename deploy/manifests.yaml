@@ -330,7 +330,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:759517383e997f1517ded3d63276f2ef7ad25757fdc3f11caa5d1ff75add6f6f"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:34d9bcb5df5669d679bad54ffca041395781fb7e909969b5a4ce2c1863793a88"
           imagePullPolicy: IfNotPresent
           command:
             - uvicorn
@@ -416,7 +416,7 @@ spec:
     spec:
       containers:
         - name: celery-beat
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:759517383e997f1517ded3d63276f2ef7ad25757fdc3f11caa5d1ff75add6f6f"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:34d9bcb5df5669d679bad54ffca041395781fb7e909969b5a4ce2c1863793a88"
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -486,7 +486,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: "ghcr.io/luqmanbello/securo-frontend@sha256:e2e60e1ac761ca0c69ffa6400eb0b03a8d8883a6468bb8d8e44263f8ca07f4dd"
+          image: "ghcr.io/luqmanbello/securo-frontend@sha256:f26de2b103f0d938d81a35873b59b9096b90c4ab90d5680a2eff726f1eaad7fc"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -567,7 +567,7 @@ spec:
     spec:
       containers:
         - name: mcp-server
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:759517383e997f1517ded3d63276f2ef7ad25757fdc3f11caa5d1ff75add6f6f"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:34d9bcb5df5669d679bad54ffca041395781fb7e909969b5a4ce2c1863793a88"
           imagePullPolicy: IfNotPresent
           command:
             - uvicorn
@@ -653,7 +653,7 @@ spec:
     spec:
       containers:
         - name: celery-worker
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:759517383e997f1517ded3d63276f2ef7ad25757fdc3f11caa5d1ff75add6f6f"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:34d9bcb5df5669d679bad54ffca041395781fb7e909969b5a4ce2c1863793a88"
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -859,7 +859,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: migration
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:759517383e997f1517ded3d63276f2ef7ad25757fdc3f11caa5d1ff75add6f6f"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:34d9bcb5df5669d679bad54ffca041395781fb7e909969b5a4ce2c1863793a88"
           imagePullPolicy: IfNotPresent
           command:
             - sh
