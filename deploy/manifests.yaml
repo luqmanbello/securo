@@ -505,8 +505,21 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           env:
+            # Fully qualified on purpose. Since #696 the nginx config reaches the
+            # backend through `set $upstream ${BACKEND_URL}` + `proxy_pass
+            # $upstream`, which makes nginx do its own DNS instead of letting the
+            # OS resolver do it. nginx's `resolver` does NOT apply the search
+            # domains in /etc/resolv.conf, so a bare Service name is sent to
+            # kube-dns as an absolute query and comes back NXDOMAIN — every /api
+            # request 502s with "securo-backend could not be resolved (3: Host
+            # not found)" while `wget http://securo-backend:8000` from the very
+            # same pod succeeds, because glibc appends the search suffixes.
+            #
+            # That asymmetry is the whole trap: the pod's DNS is fine, so the
+            # obvious checks all pass. Name the Service in full and nginx has
+            # nothing left to guess.
             - name: BACKEND_URL
-              value: "http://securo-backend:8000"
+              value: "http://securo-backend.securo.svc.cluster.local:8000"
             - name: FRONTEND_URL
               value: "https://securo.local.luqmanlabs.com"
           volumeMounts:
