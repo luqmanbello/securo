@@ -5,10 +5,10 @@ kind: ServiceAccount
 metadata:
   name: securo
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
 automountServiceAccountToken: 
 
@@ -20,10 +20,10 @@ kind: ConfigMap
 metadata:
   name: securo-config
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
 data:
   FRONTEND_URL: "https://securo.local.luqmanlabs.com"
@@ -75,10 +75,10 @@ kind: ConfigMap
 metadata:
   name: securo-frontend-nginx
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: frontend
 data:
@@ -89,8 +89,16 @@ data:
         index index.html;
 
         # API proxy to backend.
+        # Resolve the backend hostname at request time instead of caching the IP
+        # at startup. Without this, Nginx pins the upstream IP when the config
+        # loads and returns 502s after the backend pod is recreated with a new
+        # IP. Using a variable in proxy_pass forces re-resolution; NGINX_RESOLVER
+        # is derived from the pod's own /etc/resolv.conf (cluster DNS) by the
+        # image's docker-entrypoint.d/19-resolver.envsh.
         location /api/ {
-            proxy_pass ${BACKEND_URL};
+            resolver ${NGINX_RESOLVER} valid=5s;
+            set $upstream ${BACKEND_URL};
+            proxy_pass $upstream;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -116,10 +124,10 @@ kind: PersistentVolumeClaim
 metadata:
   name: securo-agent-embedding-models
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   accessModes:
@@ -135,10 +143,10 @@ kind: PersistentVolumeClaim
 metadata:
   name: securo-agent-knowledge
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   accessModes:
@@ -154,10 +162,10 @@ kind: PersistentVolumeClaim
 metadata:
   name: securo-attachments
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   accessModes:
@@ -173,10 +181,10 @@ kind: Service
 metadata:
   name: securo-backend
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: backend
 spec:
@@ -198,10 +206,10 @@ kind: Service
 metadata:
   name: securo-frontend
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: frontend
 spec:
@@ -223,10 +231,10 @@ kind: Service
 metadata:
   name: securo-mcp-server
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: mcp-server
 spec:
@@ -248,10 +256,10 @@ kind: Service
 metadata:
   name: securo-postgresql
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: postgresql
 spec:
@@ -273,10 +281,10 @@ kind: Service
 metadata:
   name: securo-redis-master
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: redis
 spec:
@@ -298,10 +306,10 @@ kind: Deployment
 metadata:
   name: securo-backend
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: backend
 spec:
@@ -314,7 +322,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: bd2b4089293a27b517f90d53c09c3cf830b0f7dab587f9fe65fe6ef2b2cb781c
+        checksum/config: d37336291f450f44fa55c052d2d602609d0298b1cf9d7a1647bacfbe960f53dc
       labels:
         app.kubernetes.io/name: securo
         app.kubernetes.io/instance: securo
@@ -322,7 +330,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:031e265c37c1243e222136124461e7d1a4e7e49db874dc7d27edbe9c2cdc9404"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:759517383e997f1517ded3d63276f2ef7ad25757fdc3f11caa5d1ff75add6f6f"
           imagePullPolicy: IfNotPresent
           command:
             - uvicorn
@@ -384,10 +392,10 @@ kind: Deployment
 metadata:
   name: securo-beat
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: celery-beat
 spec:
@@ -400,7 +408,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: bd2b4089293a27b517f90d53c09c3cf830b0f7dab587f9fe65fe6ef2b2cb781c
+        checksum/config: d37336291f450f44fa55c052d2d602609d0298b1cf9d7a1647bacfbe960f53dc
       labels:
         app.kubernetes.io/name: securo
         app.kubernetes.io/instance: securo
@@ -408,7 +416,7 @@ spec:
     spec:
       containers:
         - name: celery-beat
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:031e265c37c1243e222136124461e7d1a4e7e49db874dc7d27edbe9c2cdc9404"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:759517383e997f1517ded3d63276f2ef7ad25757fdc3f11caa5d1ff75add6f6f"
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -453,10 +461,10 @@ kind: Deployment
 metadata:
   name: securo-frontend
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: frontend
 spec:
@@ -469,7 +477,8 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: bd2b4089293a27b517f90d53c09c3cf830b0f7dab587f9fe65fe6ef2b2cb781c
+        checksum/config: d37336291f450f44fa55c052d2d602609d0298b1cf9d7a1647bacfbe960f53dc
+        checksum/nginx-config: 097edaa98f2109112bfb287302deb74b5352c830edbbd751ba23787c4bf5d6ec
       labels:
         app.kubernetes.io/name: securo
         app.kubernetes.io/instance: securo
@@ -477,7 +486,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: "ghcr.io/luqmanbello/securo-frontend@sha256:8657cd555a54d5753e63c91d166a6cc3198f107ec1a10a1696f7fdae13f625d8"
+          image: "ghcr.io/luqmanbello/securo-frontend@sha256:e2e60e1ac761ca0c69ffa6400eb0b03a8d8883a6468bb8d8e44263f8ca07f4dd"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -523,10 +532,10 @@ kind: Deployment
 metadata:
   name: securo-mcp-server
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: mcp-server
 spec:
@@ -545,7 +554,7 @@ spec:
     spec:
       containers:
         - name: mcp-server
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:031e265c37c1243e222136124461e7d1a4e7e49db874dc7d27edbe9c2cdc9404"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:759517383e997f1517ded3d63276f2ef7ad25757fdc3f11caa5d1ff75add6f6f"
           imagePullPolicy: IfNotPresent
           command:
             - uvicorn
@@ -607,10 +616,10 @@ kind: Deployment
 metadata:
   name: securo-worker
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: celery-worker
 spec:
@@ -623,7 +632,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: bd2b4089293a27b517f90d53c09c3cf830b0f7dab587f9fe65fe6ef2b2cb781c
+        checksum/config: d37336291f450f44fa55c052d2d602609d0298b1cf9d7a1647bacfbe960f53dc
       labels:
         app.kubernetes.io/name: securo
         app.kubernetes.io/instance: securo
@@ -631,7 +640,7 @@ spec:
     spec:
       containers:
         - name: celery-worker
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:031e265c37c1243e222136124461e7d1a4e7e49db874dc7d27edbe9c2cdc9404"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:759517383e997f1517ded3d63276f2ef7ad25757fdc3f11caa5d1ff75add6f6f"
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -677,10 +686,10 @@ kind: StatefulSet
 metadata:
   name: securo-postgresql
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: postgresql
 spec:
@@ -734,10 +743,10 @@ kind: StatefulSet
 metadata:
   name: securo-redis-master
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: redis
 spec:
@@ -782,10 +791,10 @@ kind: HTTPRoute
 metadata:
   name: securo
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   parentRefs:
@@ -816,10 +825,10 @@ kind: Job
 metadata:
   name: securo-migration
   labels:
-    helm.sh/chart: securo-0.14.5
+    helm.sh/chart: securo-0.15.0
     app.kubernetes.io/name: securo
     app.kubernetes.io/instance: securo
-    app.kubernetes.io/version: "0.14.5"
+    app.kubernetes.io/version: "0.15.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: migration
   annotations:
@@ -837,7 +846,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: migration
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:031e265c37c1243e222136124461e7d1a4e7e49db874dc7d27edbe9c2cdc9404"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:759517383e997f1517ded3d63276f2ef7ad25757fdc3f11caa5d1ff75add6f6f"
           imagePullPolicy: IfNotPresent
           command:
             - sh
