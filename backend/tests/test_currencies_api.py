@@ -94,3 +94,47 @@ async def test_currencies_include_sgd_with_metadata(client: AsyncClient):
     assert sgd["symbol"] == "S$"
     assert sgd["name"] == "Singapore Dollar"
     assert sgd["flag"] == "🇸🇬"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_azn_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    
+    azn = next((currency for currency in data if currency["code"] == "AZN"), None)
+    
+    assert azn is not None
+    assert azn["symbol"] == "₼"
+    assert azn["name"] == "Azerbaijani Manat"
+    assert azn["flag"] == "🇦🇿"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_try_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    turkish_lira = next((currency for currency in data if currency["code"] == "TRY"), None)
+
+    assert turkish_lira is not None
+    assert turkish_lira["symbol"] == "₺"
+    assert turkish_lira["name"] == "Turkish Lira"
+    assert turkish_lira["flag"] == "🇹🇷"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_ngn_with_metadata(client: AsyncClient):
+    """NGN is this fork's own addition and the reason it exists.
+
+    It has no upstream test, so a merge that resolved either CURRENCY_META or
+    `supported_currencies` in upstream's favour would drop it silently — the
+    endpoint would simply stop listing it and nothing would fail. This is the
+    tripwire for that.
+    """
+    response = await client.get("/api/currencies")
+    data = response.json()
+    naira = next((currency for currency in data if currency["code"] == "NGN"), None)
+
+    assert naira is not None
+    assert naira["symbol"] == "₦"
+    assert naira["name"] == "Nigerian Naira"
+    assert naira["flag"] == "🇳🇬"
