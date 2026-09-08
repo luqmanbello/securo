@@ -43,6 +43,10 @@ x-backend-env: &backend-env
   ACCESSBANK_BASE_URL: ${ACCESSBANK_BASE_URL:-https://ibank.accessbankplc.com}
   ACCESSBANK_IMPORT_CURRENCIES: ${ACCESSBANK_IMPORT_CURRENCIES:-}
   TESOURO_DIRETO_ENABLED: ${TESOURO_DIRETO_ENABLED:-true}
+  # The backend is reached through the bundled nginx frontend below, so rate
+  # limiting needs to trust exactly one reverse-proxy hop to key by real
+  # client IP instead of nginx's own container address.
+  TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
   REDIS_URL: redis://redis:6379/0
   STORAGE_LOCAL_PATH: /app/data/attachments
   AGENTS_KNOWLEDGE_STORAGE_PATH: /app/data/agent_knowledge
