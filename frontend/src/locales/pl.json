@@ -555,7 +555,8 @@
     "autoCategorizeUnsure": "Pozostawiono dla Ciebie: {{count}} — zbyt mała pewność",
     "autoCategorizeNothing": "Nie udało się nic skategoryzować automatycznie",
     "autoCategorizeNoProvider": "Najpierw podłącz model AI w sekcji Agenci",
-    "autoCategorizeDisabled": "Funkcja agentów jest wyłączona"
+    "autoCategorizeDisabled": "Funkcja agentów jest wyłączona",
+    "autoCategorizeStillRunning": "Nadal trwa w tle — wyniki pojawią się wkrótce"
   },
   "transactions": {
     "title": "Transakcje",

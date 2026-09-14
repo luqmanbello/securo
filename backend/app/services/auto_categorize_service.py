@@ -342,17 +342,30 @@ async def _provider_and_model_for_user(session: AsyncSession, user_id: uuid.UUID
         return None, ""
 
 
-async def auto_categorize_workspace(
+@dataclass
+class _Prepared:
+    """Everything the model call needs, once every cheap check has passed."""
+
+    transactions: list[Transaction]
+    categories: list[Category]
+    provider: Any
+    model: str
+
+
+async def _prepare(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
-    *,
-    limit: int = DEFAULT_LIMIT,
-    min_confidence: float = DEFAULT_MIN_CONFIDENCE,
-) -> AutoCategorizeResult:
-    """Categorize what rules missed. Returns a result; never raises."""
+    limit: int,
+) -> "AutoCategorizeResult | _Prepared":
+    """Run every check that needs no model call.
+
+    Returns an early result when there is nothing to do or something is
+    missing, otherwise the loaded inputs. Kept as the single source of truth
+    for both the real run and `preflight`, so the button's instant answer and
+    the background run can never disagree about why nothing happened.
+    """
     from app.agents.config import get_agent_settings
-    from app.agents.providers.base import ChatMessage, LLMError
 
     if not get_agent_settings().enabled:
         return AutoCategorizeResult(
@@ -378,6 +391,48 @@ async def auto_categorize_workspace(
             considered=len(transactions),
             detail="No LLM connection configured",
         )
+
+    return _Prepared(
+        transactions=transactions, categories=categories, provider=provider, model=model
+    )
+
+
+async def preflight(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    limit: int = DEFAULT_LIMIT,
+) -> Optional[AutoCategorizeResult]:
+    """The instant half of a run: None means "worth queueing a model call".
+
+    Anything else is the final answer already — agents off, nothing to
+    categorize, no connection — and costs no model call, so the caller can
+    report it straight away instead of making someone wait for a worker to
+    discover the same thing.
+    """
+    prepared = await _prepare(session, workspace_id, user_id, limit)
+    return prepared if isinstance(prepared, AutoCategorizeResult) else None
+
+
+async def auto_categorize_workspace(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    limit: int = DEFAULT_LIMIT,
+    min_confidence: float = DEFAULT_MIN_CONFIDENCE,
+) -> AutoCategorizeResult:
+    """Categorize what rules missed. Returns a result; never raises."""
+    from app.agents.providers.base import ChatMessage, LLMError
+
+    prepared = await _prepare(session, workspace_id, user_id, limit)
+    if isinstance(prepared, AutoCategorizeResult):
+        return prepared
+    transactions = prepared.transactions
+    categories = prepared.categories
+    provider = prepared.provider
+    model = prepared.model
 
     examples = await _load_examples(session, workspace_id)
     prompt = _build_user_prompt(categories, examples, transactions)

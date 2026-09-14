@@ -6,17 +6,18 @@ import pytest
 from app.tasks import categorize_tasks, sync_tasks
 
 
-def test_task_returns_the_service_result(monkeypatch):
+def test_task_returns_the_service_result_stamped_with_its_workspace(monkeypatch):
+    """The stamp is what lets the status endpoint refuse a foreign workspace."""
+
     async def _fake_run(workspace_id, user_id):
         return {"status": "ok", "categorized": 3}
 
     monkeypatch.setattr(categorize_tasks, "_run", _fake_run)
+    ws = str(uuid.uuid4())
 
-    out = categorize_tasks.auto_categorize_workspace_task(
-        str(uuid.uuid4()), str(uuid.uuid4())
-    )
+    out = categorize_tasks.auto_categorize_workspace_task(ws, str(uuid.uuid4()))
 
-    assert out == {"status": "ok", "categorized": 3}
+    assert out == {"status": "ok", "categorized": 3, "workspace_id": ws}
 
 
 def test_task_never_raises(monkeypatch):
@@ -27,14 +28,43 @@ def test_task_never_raises(monkeypatch):
         raise RuntimeError("database went away")
 
     monkeypatch.setattr(categorize_tasks, "_run", _boom)
+    ws = str(uuid.uuid4())
 
-    out = categorize_tasks.auto_categorize_workspace_task(
-        str(uuid.uuid4()), str(uuid.uuid4())
-    )
+    out = categorize_tasks.auto_categorize_workspace_task(ws, str(uuid.uuid4()))
 
     assert out["status"] == "error"
     assert out["categorized"] == 0
     assert "database went away" in out["detail"]
+    assert out["workspace_id"] == ws, "an error still has to be attributable"
+
+
+def test_a_soft_time_limit_becomes_an_ordinary_error_result(monkeypatch):
+    """Celery raises SoftTimeLimitExceeded inside the task when the limit hits.
+    It must land in the same error path as any other failure, so a slow
+    provider produces a result instead of a crashed task."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    async def _too_slow(workspace_id, user_id):
+        raise SoftTimeLimitExceeded()
+
+    monkeypatch.setattr(categorize_tasks, "_run", _too_slow)
+
+    out = categorize_tasks.auto_categorize_workspace_task(str(uuid.uuid4()), str(uuid.uuid4()))
+
+    assert out["status"] == "error"
+    assert out["categorized"] == 0
+
+
+def test_the_task_carries_time_limits_that_protect_the_worker_pool():
+    """The worker runs two slots and the model call has no timeout of its own.
+    Without these, one provider that never answers holds a slot for good."""
+    task = categorize_tasks.auto_categorize_workspace_task
+
+    assert task.soft_time_limit == categorize_tasks.SOFT_TIME_LIMIT_SECONDS
+    assert task.time_limit == categorize_tasks.TIME_LIMIT_SECONDS
+    assert task.soft_time_limit < task.time_limit, "soft must fire before the hard kill"
+    # Comfortably above the slowest real run observed (104s).
+    assert task.soft_time_limit >= 120
 
 
 def test_task_survives_a_malformed_id(monkeypatch):

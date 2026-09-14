@@ -682,3 +682,51 @@ def test_label_does_not_repeat_a_field_that_equals_the_other():
     assert _label("", "ATM WITHDRAWAL") == "ATM WITHDRAWAL"
     assert _label(None, None) == ""
     assert _label("HOLDER", "AMAZON LU") == "HOLDER — AMAZON LU"
+
+
+# --- Preflight: the instant half of a run ------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_preflight_says_queue_it_when_there_is_work_for_the_model(
+    session, test_user, test_workspace, test_account, test_categories, monkeypatch
+):
+    await _add_tx(session, test_user, test_account, description="NEEDS A MODEL")
+    provider = _install_provider(monkeypatch, ScriptedProvider(_reply([])))
+
+    early = await auto_categorize_service.preflight(session, test_workspace.id, test_user.id)
+
+    assert early is None
+    assert provider.calls == [], "preflight must never call the model"
+
+
+@pytest.mark.asyncio
+async def test_preflight_answers_nothing_to_do_instantly(
+    session, test_user, test_workspace, test_categories, monkeypatch
+):
+    provider = _install_provider(monkeypatch, ScriptedProvider(_reply([])))
+
+    early = await auto_categorize_service.preflight(session, test_workspace.id, test_user.id)
+
+    assert early is not None and early.status == "no_candidates"
+    assert provider.calls == []
+
+
+@pytest.mark.asyncio
+async def test_preflight_and_the_real_run_agree_about_a_missing_connection(
+    session, test_user, test_workspace, test_account, test_categories, monkeypatch
+):
+    """Both paths share one set of checks, so the button's instant answer and
+    the worker's can never disagree about why nothing happened."""
+    await _add_tx(session, test_user, test_account, description="ORPHAN")
+
+    async def _none(session_, user_id):
+        return None, ""
+
+    monkeypatch.setattr(auto_categorize_service, "_provider_and_model_for_user", _none)
+
+    early = await auto_categorize_service.preflight(session, test_workspace.id, test_user.id)
+    full = await auto_categorize_workspace(session, test_workspace.id, test_user.id)
+
+    assert early is not None
+    assert early.status == full.status == "no_provider"

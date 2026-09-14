@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { dashboard, transactions, budgets, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, goals as goalsApi, groups as groupsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { runAutoCategorize } from '@/lib/auto-categorize'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -309,8 +310,24 @@ export default function DashboardPage() {
   const { agentsEnabled } = useFeatureFlags()
 
   const autoCategorizeMutation = useMutation({
-    mutationFn: () => transactions.autoCategorize(),
+    // Stays pending while the worker runs, so the button keeps its spinner
+    // for the whole wait instead of flicking back after the queue returns.
+    mutationFn: () =>
+      runAutoCategorize({
+        start: () => transactions.autoCategorize(),
+        poll: (taskId) => transactions.autoCategorizeStatus(taskId),
+      }),
     onSuccess: (result) => {
+      if (result.status === 'still_running') {
+        // Its categories still land; refresh now for anything already done.
+        invalidateFinancialQueries(queryClient)
+        toast.info(t('dashboard.autoCategorizeStillRunning'))
+        return
+      }
+      if (result.status === 'error') {
+        toast.error(t('common.error'))
+        return
+      }
       if (result.categorized > 0) {
         invalidateFinancialQueries(queryClient)
         toast.success(t('dashboard.autoCategorizeDone', { count: result.categorized }))

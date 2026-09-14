@@ -549,7 +549,8 @@
     "autoCategorizeUnsure": "{{count}} für Sie übrig — nicht sicher genug",
     "autoCategorizeNothing": "Es konnte nichts automatisch kategorisiert werden",
     "autoCategorizeNoProvider": "Verbinden Sie zuerst ein KI-Modell unter Agenten",
-    "autoCategorizeDisabled": "Die Agenten-Funktion ist deaktiviert"
+    "autoCategorizeDisabled": "Die Agenten-Funktion ist deaktiviert",
+    "autoCategorizeStillRunning": "Läuft noch im Hintergrund — die Ergebnisse erscheinen in Kürze"
   },
   "transactions": {
     "title": "Transaktionen",

@@ -280,15 +280,65 @@ async def auto_categorize(
 ):
     """Categorize everything rules missed, using the configured LLM.
 
-    Synchronous on purpose: the caller is a user who just clicked a button
-    and wants the badge to change. The batch is capped and the service
-    fails quiet, so the worst case is a fast no-op with a status the UI
-    can explain.
+    Answers straight away either way. The cheap checks run here, so "agents
+    are off", "nothing to categorize" and "no connection" come back as the
+    final result at once. Anything that needs the model is handed to the
+    worker and answered with a task id to poll.
+
+    This used to await the model call inline. Real calls take 3s to 104s,
+    and the frontend's nginx gives up on an upstream at its 60s default, so
+    a slow provider turned the click into a 504 with nothing saved — while
+    the identical hourly run in the worker succeeded, having no proxy in
+    front of it.
     """
-    result = await auto_categorize_service.auto_categorize_workspace(
-        session, ctx.workspace.id, ctx.user_id
-    )
-    return result.as_dict()
+    early = await auto_categorize_service.preflight(session, ctx.workspace.id, ctx.user_id)
+    if early is not None:
+        return early.as_dict()
+
+    from app.tasks.categorize_tasks import auto_categorize_workspace_task
+
+    try:
+        task = auto_categorize_workspace_task.delay(str(ctx.workspace.id), str(ctx.user_id))
+    except Exception:
+        # Redis unreachable. Say so, rather than letting the button spin on
+        # a task id that was never queued.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not queue auto-categorization",
+        )
+    return {"status": "queued", "task_id": task.id}
+
+
+@router.get("/auto-categorize/{task_id}")
+async def auto_categorize_status(
+    task_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+):
+    """Where a queued auto-categorization has got to.
+
+    `running` until the worker finishes, then the same result shape the
+    button always showed. Celery reports an id it has never seen as PENDING
+    too, so an unknown id reads as `running` and reveals nothing; the caller
+    gives up after a deadline. A finished result is only shown to the
+    workspace it belongs to.
+    """
+    from celery.result import AsyncResult
+
+    from app.worker import celery_app
+
+    outcome = AsyncResult(str(task_id), app=celery_app)
+    if not outcome.ready():
+        return {"status": "running"}
+
+    if outcome.failed():
+        # Only reachable through the hard time limit killing the process —
+        # the task itself never raises.
+        return {"status": "error", "detail": "Auto-categorization did not finish", "categorized": 0}
+
+    result = outcome.result if isinstance(outcome.result, dict) else {}
+    if result.get("workspace_id") != str(ctx.workspace.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return {k: v for k, v in result.items() if k != "workspace_id"}
 
 
 @router.patch("/bulk-add-tags")

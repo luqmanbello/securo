@@ -1,9 +1,9 @@
 import axios from 'axios'
 import type { NumberFormat, DateFormat } from '@/lib/format'
+import type { AutoCategorizePoll, AutoCategorizeStart } from '@/lib/auto-categorize'
 import type {
   User,
   AdminUser,
-  AutoCategorizeResult,
   AdminUserList,
   Passkey,
   PasskeyOptionsResponse,
@@ -572,8 +572,14 @@ export const transactions = {
     })
     return data
   },
-  autoCategorize: async (): Promise<AutoCategorizeResult> => {
+  // Returns at once: a final answer, or a task id to hand to
+  // autoCategorizeStatus. See lib/auto-categorize.ts for the polling.
+  autoCategorize: async (): Promise<AutoCategorizeStart> => {
     const { data } = await api.post('/transactions/auto-categorize')
+    return data
+  },
+  autoCategorizeStatus: async (taskId: string): Promise<AutoCategorizePoll> => {
+    const { data } = await api.get(`/transactions/auto-categorize/${taskId}`)
     return data
   },
   bulkAddTags: async (transactionIds: string[], tags: string[]): Promise<{ updated: number }> => {

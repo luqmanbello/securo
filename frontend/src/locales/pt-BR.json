@@ -549,7 +549,8 @@
     "autoCategorizeUnsure": "{{count}} deixadas para você — confiança insuficiente",
     "autoCategorizeNothing": "Nada pôde ser categorizado automaticamente",
     "autoCategorizeNoProvider": "Conecte um modelo de IA em Agentes primeiro",
-    "autoCategorizeDisabled": "O recurso de agentes está desativado"
+    "autoCategorizeDisabled": "O recurso de agentes está desativado",
+    "autoCategorizeStillRunning": "Ainda processando em segundo plano — os resultados aparecerão em breve"
   },
   "transactions": {
     "title": "Transações",

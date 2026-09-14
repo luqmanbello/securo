@@ -690,6 +690,11 @@ export interface AutoCategorizeResult {
     | 'no_provider'
     | 'llm_error'
     | 'unparseable'
+    // The worker failed outright, e.g. killed by its time limit.
+    | 'error'
+    // We stopped waiting; the worker is still going and its categories
+    // will still land. Not a failure.
+    | 'still_running'
   considered: number
   categorized: number
   skipped_low_confidence: number

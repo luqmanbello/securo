@@ -549,7 +549,8 @@
     "autoCategorizeUnsure": "{{count}} आपके लिए छोड़े गए — पर्याप्त निश्चितता नहीं थी",
     "autoCategorizeNothing": "कुछ भी स्वतः श्रेणीबद्ध नहीं किया जा सका",
     "autoCategorizeNoProvider": "पहले एजेंट्स में एक AI मॉडल कनेक्ट करें",
-    "autoCategorizeDisabled": "एजेंट्स सुविधा बंद है"
+    "autoCategorizeDisabled": "एजेंट्स सुविधा बंद है",
+    "autoCategorizeStillRunning": "अभी भी बैकग्राउंड में चल रहा है — परिणाम जल्द ही दिखेंगे"
   },
   "transactions": {
     "title": "लेन-देन",

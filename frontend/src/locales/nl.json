@@ -549,7 +549,8 @@
     "autoCategorizeUnsure": "{{count}} voor jou overgelaten — niet zeker genoeg",
     "autoCategorizeNothing": "Er kon niets automatisch worden gecategoriseerd",
     "autoCategorizeNoProvider": "Verbind eerst een AI-model bij Agents",
-    "autoCategorizeDisabled": "De agents-functie is uitgeschakeld"
+    "autoCategorizeDisabled": "De agents-functie is uitgeschakeld",
+    "autoCategorizeStillRunning": "Nog bezig op de achtergrond — de resultaten verschijnen zo"
   },
   "transactions": {
     "title": "Transacties",

@@ -549,7 +549,8 @@
     "autoCategorizeUnsure": "Оставлено вам: {{count}} — недостаточно уверенности",
     "autoCategorizeNothing": "Ничего не удалось категоризировать автоматически",
     "autoCategorizeNoProvider": "Сначала подключите модель ИИ в разделе «Агенты»",
-    "autoCategorizeDisabled": "Функция агентов отключена"
+    "autoCategorizeDisabled": "Функция агентов отключена",
+    "autoCategorizeStillRunning": "Всё ещё выполняется в фоне — результаты скоро появятся"
   },
   "transactions": {
     "title": "Транзакции",

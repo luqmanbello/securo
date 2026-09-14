@@ -549,7 +549,8 @@
     "autoCategorizeUnsure": "{{count}} 件は確信度が足りないため残しました",
     "autoCategorizeNothing": "自動で分類できるものはありませんでした",
     "autoCategorizeNoProvider": "先にエージェントで AI モデルを接続してください",
-    "autoCategorizeDisabled": "エージェント機能は無効です"
+    "autoCategorizeDisabled": "エージェント機能は無効です",
+    "autoCategorizeStillRunning": "バックグラウンドで処理中です。まもなく結果が表示されます"
   },
   "transactions": {
     "title": "取引",

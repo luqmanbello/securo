@@ -549,7 +549,8 @@
     "autoCategorizeUnsure": "Залишено вам: {{count}} — недостатньо впевненості",
     "autoCategorizeNothing": "Нічого не вдалося категоризувати автоматично",
     "autoCategorizeNoProvider": "Спочатку підключіть модель ШІ в розділі «Агенти»",
-    "autoCategorizeDisabled": "Функцію агентів вимкнено"
+    "autoCategorizeDisabled": "Функцію агентів вимкнено",
+    "autoCategorizeStillRunning": "Досі виконується у фоні — результати скоро з'являться"
   },
   "transactions": {
     "title": "Транзакції",

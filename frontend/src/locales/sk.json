@@ -557,7 +557,8 @@
     "autoCategorizeUnsure": "Ponechané pre vás: {{count}} — nedostatočná istota",
     "autoCategorizeNothing": "Nič sa nepodarilo automaticky kategorizovať",
     "autoCategorizeNoProvider": "Najprv pripojte AI model v sekcii Agenti",
-    "autoCategorizeDisabled": "Funkcia agentov je vypnutá"
+    "autoCategorizeDisabled": "Funkcia agentov je vypnutá",
+    "autoCategorizeStillRunning": "Stále beží na pozadí — výsledky sa čoskoro zobrazia"
   },
   "transactions": {
     "title": "Transakcie",

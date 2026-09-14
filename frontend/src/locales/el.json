@@ -549,7 +549,8 @@
     "autoCategorizeUnsure": "{{count}} αφέθηκαν σε εσάς — δεν υπήρχε αρκετή βεβαιότητα",
     "autoCategorizeNothing": "Δεν ήταν δυνατή η αυτόματη κατηγοριοποίηση",
     "autoCategorizeNoProvider": "Συνδέστε πρώτα ένα μοντέλο AI στους Πράκτορες",
-    "autoCategorizeDisabled": "Η λειτουργία πρακτόρων είναι απενεργοποιημένη"
+    "autoCategorizeDisabled": "Η λειτουργία πρακτόρων είναι απενεργοποιημένη",
+    "autoCategorizeStillRunning": "Εκτελείται ακόμη στο παρασκήνιο — τα αποτελέσματα θα εμφανιστούν σύντομα"
   },
   "accounts": {
     "title": "Λογαριασμοί",
