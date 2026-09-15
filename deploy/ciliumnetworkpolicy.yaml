@@ -346,23 +346,33 @@ spec:
               protocol: TCP
 
 ---
-# mcp-server: serves the agent's tools over JSON-RPC. Added 2026-08-25 with
-# the agents feature.
+# mcp-server: serves the agent's tools over MCP (Streamable HTTP). Added
+# 2026-08-25 with the agents feature.
 #
-# Its ingress is a single source on purpose. The chart publishes a /mcp route
-# on the Gateway whenever this component is enabled, which would make the
-# `host` entity a legitimate ingress source -- and that route is deliberately
-# removed in kustomization.yaml, so it is not one. If /mcp is ever restored,
-# this policy must grow `fromEntities: [ingress]` in the same change, or the
-# route will exist and silently fail.
+# Ingress has exactly two sources, both pods in this cluster:
 #
-# It gets NO internet egress, and that is the load-bearing part. The tools in
-# backend/mcp_server/tools/ read and write transactions, accounts, budgets and
-# payees straight from the database; the LLM call that decides which tool to
-# invoke happens in the BACKEND, not here. So this pod has every reason to
-# reach Postgres and none at all to reach the outside world. Denying it egress
-# means a flaw in tool handling cannot become exfiltration -- the data can be
-# read, but there is nowhere to send it.
+#   1. securo's own backend, whose agent runtime calls the tools.
+#   2. The Executor MCP gateway (namespace `executor`), added 2026-09-15 on
+#      Luqman's decision to reach securo through its built-in MCP server. Its
+#      own egress policy already names this pod on 8765. Executor authenticates
+#      with its own MCP JWT and exposes every tool, reads and writes; whether a
+#      write runs or waits for approval is set in Executor's console.
+#
+# Nothing arrives from the Gateway. The chart publishes a /mcp route whenever
+# this component is enabled, and kustomization.yaml deliberately removes it,
+# so the `host` entity is not a source. If /mcp is ever restored, this policy
+# must grow `fromEntities: [ingress]` in the same change, or the route will
+# exist and silently fail.
+#
+# It gets NO internet egress. The tools in backend/mcp_server/tools/ read and
+# write transactions, accounts, budgets and payees straight from the
+# database, so this pod has every reason to reach Postgres and none to reach
+# the outside world: a flaw in tool handling here cannot open its own channel
+# out. Be precise about what that does and does not mean since Executor was
+# admitted: tool RESULTS now leave this namespace by design, to Executor, and
+# from there to whichever MCP clients Luqman connects. The fence stops this
+# pod exfiltrating on its own; it does not keep financial data inside the
+# cluster, and was never meant to once a gateway was chosen.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -378,6 +388,17 @@ spec:
         - matchLabels:
             app.kubernetes.io/name: securo
             app.kubernetes.io/component: backend
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    # The namespace label is required. Without it Cilium scopes fromEndpoints
+    # to this policy's own namespace (securo), and the rule would silently
+    # match nothing while every pod stayed Healthy.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: executor
+            app.kubernetes.io/name: executor
       toPorts:
         - ports:
             - port: "8765"
