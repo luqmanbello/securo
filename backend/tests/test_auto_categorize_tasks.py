@@ -134,7 +134,7 @@ async def test_sync_all_queues_each_synced_workspace_once(monkeypatch):
 
     class _Result:
         def all(self):
-            return [(conn_a, user, None), (conn_b, user, None)]
+            return [(conn_a, user, None, {}), (conn_b, user, None, {})]
 
     class _Session:
         async def execute(self, *_a, **_k):
@@ -154,7 +154,7 @@ async def test_sync_all_queues_each_synced_workspace_once(monkeypatch):
         sync_tasks, "_make_session_maker", lambda: (_Engine(), lambda: _Session())
     )
 
-    async def _fake_sync_one(session_maker, connection_id, user_id):
+    async def _fake_sync_one(session_maker, connection_id, user_id, **_kw):
         return ws
 
     monkeypatch.setattr(sync_tasks, "_sync_one", _fake_sync_one)
@@ -175,7 +175,7 @@ async def test_sync_all_does_not_queue_a_connection_that_failed(monkeypatch):
 
     class _Result:
         def all(self):
-            return [(conn, user, None)]
+            return [(conn, user, None, {})]
 
     class _Session:
         async def execute(self, *_a, **_k):
@@ -195,7 +195,7 @@ async def test_sync_all_does_not_queue_a_connection_that_failed(monkeypatch):
         sync_tasks, "_make_session_maker", lambda: (_Engine(), lambda: _Session())
     )
 
-    async def _boom(session_maker, connection_id, user_id):
+    async def _boom(session_maker, connection_id, user_id, **_kw):
         raise RuntimeError("provider refused")
 
     monkeypatch.setattr(sync_tasks, "_sync_one", _boom)
