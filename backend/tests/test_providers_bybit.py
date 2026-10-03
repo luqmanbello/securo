@@ -364,3 +364,18 @@ async def test_empty_balance_strings_count_as_zero():
     fake = FakeBybit(uta=[{"coin": "USDT", "walletBalance": "0"}, {"coin": "USD", "walletBalance": ""}])
     [acc] = await _run(fake, lambda p: p.get_accounts(_creds()))
     assert acc.balance == Decimal("120.11")  # 100.10 FUND + 20.01 Earn
+
+
+BYBIT_LOGO = "/institution-logos/bybit.svg"
+
+
+def test_bybit_provider_entry_carries_its_logo():
+    entry = next(p for p in KNOWN_PROVIDERS if p["name"] == "bybit")
+    assert entry["logo_url"] == BYBIT_LOGO
+
+
+@pytest.mark.asyncio
+async def test_claim_and_backfill_return_the_bybit_logo():
+    data = await _run(FakeBybit(), lambda p: p.handle_oauth_callback(json.dumps({"api_key": FAKE_KEY, "api_secret": FAKE_SECRET})))
+    assert data.logo_url == BYBIT_LOGO
+    assert await BybitProvider().get_institution_logo(_creds()) == BYBIT_LOGO

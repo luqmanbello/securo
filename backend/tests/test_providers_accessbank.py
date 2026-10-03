@@ -1135,6 +1135,7 @@ async def test_handle_oauth_callback_claims_credentials_and_returns_accounts():
     assert set(connection.credentials) == {"user_id", "password_enc"}
     assert connection.credentials["user_id"] == "theuserid"
     assert decrypt(connection.credentials["password_enc"]) == "hunter2"
+    assert connection.logo_url == "/institution-logos/accessbank.png"
     assert len(connection.accounts) == 1
     assert connection.accounts[0].currency == "USD"
 
@@ -1248,3 +1249,26 @@ def test_provider_is_listed_as_known():
 def test_provider_resolves_from_the_registry_once_registered():
     register_provider("accessbank", AccessBankProvider)
     assert isinstance(get_provider("accessbank"), AccessBankProvider)
+
+
+ACCESSBANK_LOGO = "/institution-logos/accessbank.png"
+
+
+def test_accessbank_provider_entry_carries_its_logo():
+    from app.providers import KNOWN_PROVIDERS
+
+    entry = next(p for p in KNOWN_PROVIDERS if p["name"] == "accessbank")
+    assert entry["logo_url"] == ACCESSBANK_LOGO
+
+
+@pytest.mark.asyncio
+async def test_accessbank_backfills_its_logo_for_existing_connections():
+    assert await AccessBankProvider().get_institution_logo(_CREDS) == ACCESSBANK_LOGO
+
+
+def test_bundled_logo_files_exist():
+    from pathlib import Path
+
+    public = Path(__file__).resolve().parents[2] / "frontend" / "public"
+    for name in ("bybit.svg", "accessbank.png"):
+        assert (public / "institution-logos" / name).is_file(), name
