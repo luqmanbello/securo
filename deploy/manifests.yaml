@@ -43,6 +43,7 @@ data:
   AGENTS_MCP_EXTERNAL_TTL_DAYS: "90"
   AGENTS_OLLAMA_BASE_URL: "http://ollama:11434"
   AGENTS_OPENAI_COMPAT_BASE_URL: ""
+  BYBIT_ENABLED: "true"
   CELERY_BROKER_URL: "redis://securo-redis-master:6379/0"
   CELERY_RESULT_BACKEND: "redis://securo-redis-master:6379/0"
   DEBUG: "false"
@@ -322,7 +323,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 4aca4bdbf31b87ce315daf2378764f089c3970949ec788584c064c7f6efe0540
+        checksum/config: 87600e64c8285763d4d93d1445944861c7e2a7ad5254810225d4073a16f9affd
       labels:
         app.kubernetes.io/name: securo
         app.kubernetes.io/instance: securo
@@ -330,7 +331,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:873f4461e1303f748bea99f89d54346894e46cdf3378f7a89069d6e49f4ca213"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:6a7c0f0bd8c4b24a18da104bf4db5bc466cb3f43d6448745019c7130351f09e5"
           imagePullPolicy: IfNotPresent
           command:
             - uvicorn
@@ -408,7 +409,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 4aca4bdbf31b87ce315daf2378764f089c3970949ec788584c064c7f6efe0540
+        checksum/config: 87600e64c8285763d4d93d1445944861c7e2a7ad5254810225d4073a16f9affd
       labels:
         app.kubernetes.io/name: securo
         app.kubernetes.io/instance: securo
@@ -416,7 +417,7 @@ spec:
     spec:
       containers:
         - name: celery-beat
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:873f4461e1303f748bea99f89d54346894e46cdf3378f7a89069d6e49f4ca213"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:6a7c0f0bd8c4b24a18da104bf4db5bc466cb3f43d6448745019c7130351f09e5"
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -477,7 +478,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 4aca4bdbf31b87ce315daf2378764f089c3970949ec788584c064c7f6efe0540
+        checksum/config: 87600e64c8285763d4d93d1445944861c7e2a7ad5254810225d4073a16f9affd
         checksum/nginx-config: 9c754833169dbcae7af0313175be4200d20922f8e87bb40396ef6baee88e9dcd
       labels:
         app.kubernetes.io/name: securo
@@ -486,7 +487,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: "ghcr.io/luqmanbello/securo-frontend@sha256:1bd3dd7fe5bf3d1bfaf306d87dcb7dfa2927b94d6893d04e43f8a0f7cb9554c2"
+          image: "ghcr.io/luqmanbello/securo-frontend@sha256:522704d364c3c45806f1c44f106c20024b3526c12ed160abcc0bdb21ed3004e3"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -567,7 +568,7 @@ spec:
     spec:
       containers:
         - name: mcp-server
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:873f4461e1303f748bea99f89d54346894e46cdf3378f7a89069d6e49f4ca213"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:6a7c0f0bd8c4b24a18da104bf4db5bc466cb3f43d6448745019c7130351f09e5"
           imagePullPolicy: IfNotPresent
           command:
             - uvicorn
@@ -645,7 +646,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 4aca4bdbf31b87ce315daf2378764f089c3970949ec788584c064c7f6efe0540
+        checksum/config: 87600e64c8285763d4d93d1445944861c7e2a7ad5254810225d4073a16f9affd
       labels:
         app.kubernetes.io/name: securo
         app.kubernetes.io/instance: securo
@@ -653,7 +654,7 @@ spec:
     spec:
       containers:
         - name: celery-worker
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:873f4461e1303f748bea99f89d54346894e46cdf3378f7a89069d6e49f4ca213"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:6a7c0f0bd8c4b24a18da104bf4db5bc466cb3f43d6448745019c7130351f09e5"
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -866,7 +867,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: migration
-          image: "ghcr.io/luqmanbello/securo-backend@sha256:873f4461e1303f748bea99f89d54346894e46cdf3378f7a89069d6e49f4ca213"
+          image: "ghcr.io/luqmanbello/securo-backend@sha256:6a7c0f0bd8c4b24a18da104bf4db5bc466cb3f43d6448745019c7130351f09e5"
           imagePullPolicy: IfNotPresent
           command:
             - sh
