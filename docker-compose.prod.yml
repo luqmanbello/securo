@@ -42,6 +42,8 @@ x-backend-env: &backend-env
   ACCESSBANK_ENABLED: ${ACCESSBANK_ENABLED:-false}
   ACCESSBANK_BASE_URL: ${ACCESSBANK_BASE_URL:-https://ibank.accessbankplc.com}
   ACCESSBANK_IMPORT_CURRENCIES: ${ACCESSBANK_IMPORT_CURRENCIES:-}
+  BYBIT_ENABLED: ${BYBIT_ENABLED:-false}
+  BYBIT_BASE_URL: ${BYBIT_BASE_URL:-https://api.bybit.com}
   TESOURO_DIRETO_ENABLED: ${TESOURO_DIRETO_ENABLED:-true}
   # The backend is reached through the bundled nginx frontend below, so rate
   # limiting needs to trust exactly one reverse-proxy hop to key by real
