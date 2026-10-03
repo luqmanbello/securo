@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from 'react'
+import { getAccountName, sumAccountBalances } from '@/lib/account-utils'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
@@ -59,10 +59,12 @@ import { CommandPalette } from '@/components/command-palette'
 import { useCommandPaletteHotkey } from '@/hooks/use-command-palette-hotkey'
 import { GlobalChatPanel } from '@/components/global-chat-panel'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
-import { Bot, Search, Sparkles } from 'lucide-react'
+import { Bot, Plus, Search, Sparkles } from 'lucide-react'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { formatCurrency } from '@/lib/format'
+
+const QuickAddTransaction = lazy(() => import('@/components/quick-add-transaction'))
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'securo.sidebar.collapsed'
 
@@ -96,6 +98,7 @@ export function AppLayout() {
   const { theme, setTheme, resolvedTheme } = useTheme()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true',
   )
@@ -202,14 +205,7 @@ export function AppLayout() {
   const visibleAccounts = activeAccountIds
     ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
     : allAccounts
-  const sharedBalanceGroups = new Set<string>()
-  const totalBalance = visibleAccounts.reduce((sum, a) => {
-    if (a.shared_balance_group) {
-      if (sharedBalanceGroups.has(a.shared_balance_group)) return sum
-      sharedBalanceGroups.add(a.shared_balance_group)
-    }
-    return sum + Number(a.balance_primary ?? a.current_balance)
-  }, 0)
+  const totalBalance = sumAccountBalances(visibleAccounts)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
@@ -219,7 +215,7 @@ export function AppLayout() {
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="text-sidebar-muted hover:text-sidebar-foreground transition-colors"
-          aria-label="Toggle menu"
+          aria-label={t('app.toggleMenu')}
         >
           <Menu size={20} />
         </button>
@@ -448,7 +444,8 @@ export function AppLayout() {
                   ? location.pathname === '/'
                   : location.pathname.startsWith(item.path)
               const Icon = item.icon
-              return (
+              const showQuickAdd = item.key === 'transactions' && canWrite
+              const link = (
                 <Link
                   key={item.key}
                   to={item.path}
@@ -474,6 +471,27 @@ export function AppLayout() {
                   />
                   <span className={cn(desktopSidebarCollapsed && 'lg:hidden')}>{t(`nav.${item.key}`)}</span>
                 </Link>
+              )
+              if (!showQuickAdd) return link
+              return (
+                <div key={item.key} className="relative flex items-center">
+                  <div className="min-w-0 flex-1">{link}</div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSidebarOpen(false)
+                      setQuickAddOpen(true)
+                    }}
+                    title={t('transactions.addManual')}
+                    aria-label={t('transactions.addManual')}
+                    className={cn(
+                      'absolute right-2 flex h-6 w-6 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                      desktopSidebarCollapsed && 'lg:hidden',
+                    )}
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
               )
             })}
           </nav>
@@ -617,6 +635,11 @@ export function AppLayout() {
         localAuthEnabled={localAuthEnabled}
       />
       <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
+      {quickAddOpen && (
+        <Suspense fallback={null}>
+          <QuickAddTransaction open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
+        </Suspense>
+      )}
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       {/* Slide-over global chat — opened from the sidebar pill or via
           ⌘J. The previous floating bottom-right button was removed
