@@ -27,6 +27,7 @@ from app.providers.base import (
     SessionExpiredError,
     TransactionData,
 )
+from app.providers.logos import BYBIT_LOGO_URL
 from app.providers.bybit_client import (
     PATH_CARD_RECORDS,
     PATH_EARN_POSITION,
@@ -130,6 +131,10 @@ class BybitProvider(BankProvider):
     def _now(self) -> int:
         return int(time.time())
 
+    async def get_institution_logo(self, credentials: dict) -> Optional[str]:
+        """Bundled official logo; also backfills connections made before it."""
+        return BYBIT_LOGO_URL
+
     async def _validate(self, client: BybitClient, *, claim: bool) -> dict:
         try:
             info = await client.get(PATH_QUERY_API, {}, "query_api")
@@ -204,6 +209,7 @@ class BybitProvider(BankProvider):
         return ConnectionData(
             external_id=f"bybit:{uid_hash}",
             institution_name="Bybit",
+            logo_url=BYBIT_LOGO_URL,
             credentials={"api_key_enc": key_enc, "api_secret_enc": secret_enc, "key_expires_at": self._expires_at(info)},
             accounts=[self._account(balance)],
         )

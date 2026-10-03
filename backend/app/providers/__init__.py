@@ -1,3 +1,4 @@
+from app.providers.logos import ACCESSBANK_LOGO_URL, BYBIT_LOGO_URL
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -48,6 +49,7 @@ KNOWN_PROVIDERS = [
         "flow_type": "credentials",
         "requires_institution_select": False,
         "supports_asset_sync": False,
+        "logo_url": ACCESSBANK_LOGO_URL,
     },
     {
         "name": "bybit",
@@ -56,6 +58,7 @@ KNOWN_PROVIDERS = [
         "flow_type": "credentials",
         "requires_institution_select": False,
         "supports_asset_sync": False,
+        "logo_url": BYBIT_LOGO_URL,
         # The credentials dialog renders these instead of its user ID +
         # password default. `secret` fields are masked and never autofilled.
         "credential_fields": [

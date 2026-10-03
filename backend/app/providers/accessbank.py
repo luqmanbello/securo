@@ -35,6 +35,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from app.agents.services.crypto import decrypt, encrypt
+from app.providers.logos import ACCESSBANK_LOGO_URL
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -777,9 +778,14 @@ class AccessBankProvider(BankProvider):
         return ConnectionData(
             external_id=session.customer_id,
             institution_name="Access Bank",
+            logo_url=ACCESSBANK_LOGO_URL,
             credentials=credentials,
             accounts=accounts,
         )
+
+    async def get_institution_logo(self, credentials: dict) -> Optional[str]:
+        """Bundled official logo; also backfills connections made before it."""
+        return ACCESSBANK_LOGO_URL
 
     async def refresh_credentials(self, credentials: dict) -> dict:
         """No-op. There is no refresh token; every operation authenticates

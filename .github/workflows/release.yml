@@ -40,16 +40,16 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
       - name: Build and push backend image
         id: push
         uses: docker/build-push-action@v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          # amd64 only: the cluster (k3s on VM 190) is amd64, and the arm64
+          # variant was built under QEMU emulation, which made every release
+          # several minutes slower for an image nothing here pulls.
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -83,16 +83,16 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
       - name: Build and push frontend image
         id: push
         uses: docker/build-push-action@v7
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          # amd64 only: the cluster (k3s on VM 190) is amd64, and the arm64
+          # variant was built under QEMU emulation, which made every release
+          # several minutes slower for an image nothing here pulls.
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -18,6 +18,7 @@ export interface Provider {
   requires_institution_select?: boolean
   supports_asset_sync?: boolean
   credential_fields?: { name: string; label_key: string; placeholder_key?: string; secret: boolean }[]
+  logo_url?: string
 }
 
 interface ConnectorSelectDialogProps {
@@ -80,8 +81,12 @@ function ConnectorSelectSession({ open, onClose, onSelect }: ConnectorSelectDial
                     : 'border-border/50 opacity-60 cursor-not-allowed'
                 }`}
               >
-                <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5">
-                  <Building2 size={16} className="text-muted-foreground" />
+                <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5 overflow-hidden">
+                  {p.logo_url ? (
+                    <img src={p.logo_url} alt={p.display_name} className="w-full h-full object-contain" />
+                  ) : (
+                    <Building2 size={16} className="text-muted-foreground" />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground">{p.display_name}</p>

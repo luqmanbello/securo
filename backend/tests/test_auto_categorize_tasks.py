@@ -140,6 +140,9 @@ async def test_sync_all_queues_each_synced_workspace_once(monkeypatch):
         async def execute(self, *_a, **_k):
             return _Result()
 
+        async def scalar(self, *_a, **_k):
+            return None  # no saved timezone setting
+
         async def __aenter__(self):
             return self
 
@@ -180,6 +183,9 @@ async def test_sync_all_does_not_queue_a_connection_that_failed(monkeypatch):
     class _Session:
         async def execute(self, *_a, **_k):
             return _Result()
+
+        async def scalar(self, *_a, **_k):
+            return None  # no saved timezone setting
 
         async def __aenter__(self):
             return self
