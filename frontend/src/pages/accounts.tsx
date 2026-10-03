@@ -620,6 +620,7 @@ export default function AccountsPage() {
         open={!!selectedProvider && selectedProvider.flow_type === 'credentials'}
         onClose={() => setSelectedProvider(null)}
         provider={selectedProvider?.name ?? ''}
+        fields={selectedProvider?.credential_fields}
       />
 
       {/* Reconnect Dialog — widget-based (Pluggy) */}
@@ -644,6 +645,7 @@ export default function AccountsPage() {
         onClose={() => setCredentialsReconnectConnection(null)}
         provider={credentialsReconnectConnection?.provider ?? ''}
         reconnectConnectionId={credentialsReconnectConnection?.id}
+        fields={credentialsReconnectConnection ? providersByName.get(credentialsReconnectConnection.provider)?.credential_fields : undefined}
       />
 
       {/* Connection Settings Dialog */}
