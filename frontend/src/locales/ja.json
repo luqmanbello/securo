@@ -988,6 +988,17 @@
         "title": "Access Bank 経由で接続",
         "description": "口座を連携するには、Access Bank のインターネットバンキングのユーザーIDとパスワードを入力してください。"
       },
+      "bybit": {
+        "title": "Bybit を接続",
+        "description": "読み取り専用の Bybit API キーを貼り付けてください。Bybit の Profile → API → Create New Key で Read-Only を選び、Wallet、Earn、Bybit Card にチェックを入れて作成します。",
+        "apiKeyLabel": "API キー",
+        "apiKeyPlaceholder": "Bybit の API キー",
+        "apiSecretLabel": "API シークレット",
+        "apiSecretPlaceholder": "Bybit の API シークレット",
+        "privacyNote": "Securo は読み取り専用の API キーのみを受け付けます。残高と取引は見られますが、取引や出金はできません。シークレットは暗号化して保存されます。",
+        "reconnectTitle": "Bybit キーを置き換える",
+        "reconnectDescription": "新しい読み取り専用キーを貼り付けてください。既存の取引、カテゴリ、ルールはそのまま残ります。"
+      },
       "reconnectTitle": "新しい認証情報で再接続",
       "reconnectDescription": "ユーザーIDとパスワードを再入力して、この接続をそのまま更新します。既存の口座、取引、カテゴリ、ルールは保持されます。",
       "reconnect": "再接続"

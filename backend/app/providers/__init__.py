@@ -49,6 +49,30 @@ KNOWN_PROVIDERS = [
         "requires_institution_select": False,
         "supports_asset_sync": False,
     },
+    {
+        "name": "bybit",
+        "display_name": "Bybit",
+        "description": "Bybit stablecoin balance and Bybit Card payments via a read-only API key",
+        "flow_type": "credentials",
+        "requires_institution_select": False,
+        "supports_asset_sync": False,
+        # The credentials dialog renders these instead of its user ID +
+        # password default. `secret` fields are masked and never autofilled.
+        "credential_fields": [
+            {
+                "name": "api_key",
+                "label_key": "accounts.credentialsConnect.bybit.apiKeyLabel",
+                "placeholder_key": "accounts.credentialsConnect.bybit.apiKeyPlaceholder",
+                "secret": False,
+            },
+            {
+                "name": "api_secret",
+                "label_key": "accounts.credentialsConnect.bybit.apiSecretLabel",
+                "placeholder_key": "accounts.credentialsConnect.bybit.apiSecretPlaceholder",
+                "secret": True,
+            },
+        ],
+    },
 ]
 
 
@@ -105,6 +129,10 @@ def _auto_register_providers() -> None:
     if settings.accessbank_enabled:
         from app.providers.accessbank import AccessBankProvider
         register_provider("accessbank", AccessBankProvider)
+
+    if settings.bybit_enabled:
+        from app.providers.bybit import BybitProvider
+        register_provider("bybit", BybitProvider)
 
 
 _auto_register_providers()

@@ -988,6 +988,17 @@
         "title": "Access Bank के ज़रिए कनेक्ट करें",
         "description": "अपने खाते जोड़ने के लिए Access Bank इंटरनेट बैंकिंग का यूज़र आईडी और पासवर्ड दर्ज करें।"
       },
+      "bybit": {
+        "title": "Bybit जोड़ें",
+        "description": "केवल-पढ़ने वाली Bybit API कुंजी चिपकाएँ। इसे Bybit में Profile → API → Create New Key से Read-Only के साथ बनाएँ, और Wallet, Earn तथा Bybit Card चुनें।",
+        "apiKeyLabel": "API कुंजी",
+        "apiKeyPlaceholder": "आपकी Bybit API कुंजी",
+        "apiSecretLabel": "API सीक्रेट",
+        "apiSecretPlaceholder": "आपका Bybit API सीक्रेट",
+        "privacyNote": "Securo केवल केवल-पढ़ने वाली API कुंजी स्वीकार करता है। यह आपका बैलेंस और लेन-देन देख सकती है, पर ट्रेड या निकासी नहीं कर सकती। सीक्रेट एन्क्रिप्ट करके रखा जाता है।",
+        "reconnectTitle": "Bybit कुंजी बदलें",
+        "reconnectDescription": "नई केवल-पढ़ने वाली कुंजी चिपकाएँ। मौजूदा लेन-देन, श्रेणियाँ और नियम बने रहेंगे।"
+      },
       "reconnectTitle": "नए क्रेडेंशियल से दोबारा कनेक्ट करें",
       "reconnectDescription": "इस कनेक्शन को यथावत नवीनीकृत करने के लिए अपना यूज़र आईडी और पासवर्ड दोबारा दर्ज करें। मौजूदा खाते, लेनदेन, श्रेणियाँ और नियम सुरक्षित रहेंगे।",
       "reconnect": "दोबारा कनेक्ट करें"

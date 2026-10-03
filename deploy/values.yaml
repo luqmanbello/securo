@@ -65,6 +65,10 @@ config:
   # USD only, matching the owner's decision recorded next to the field in
   # backend/app/core/config.py: naira is tracked by hand, not auto-imported.
   accessbankImportCurrencies: "USD"
+  # Bybit: read-only API key per connection, entered in the app. Only
+  # bybit.com accounts (api.bybit.com); EEA bybit.eu keys are not supported
+  # by Bybit itself. See backend/app/providers/bybit.py.
+  bybitEnabled: "true"
   # Pinned explicitly rather than left to the backend's own default so a
   # future upstream change to backend/app/core/config.py can't silently
   # change which currencies this deployment supports. Copied verbatim from

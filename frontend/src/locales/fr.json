@@ -989,6 +989,17 @@
         "title": "Se connecter via Access Bank",
         "description": "Saisissez votre identifiant et votre mot de passe de banque en ligne Access Bank pour relier vos comptes."
       },
+      "bybit": {
+        "title": "Connecter Bybit",
+        "description": "Collez une clé API Bybit en lecture seule. Créez-la dans Bybit via Profile → API → Create New Key, avec Read-Only, et cochez Wallet, Earn et Bybit Card.",
+        "apiKeyLabel": "Clé API",
+        "apiKeyPlaceholder": "Votre clé API Bybit",
+        "apiSecretLabel": "Secret API",
+        "apiSecretPlaceholder": "Votre secret API Bybit",
+        "privacyNote": "Securo n’accepte que des clés API en lecture seule. Elle voit votre solde et vos transactions, mais ne peut ni trader ni retirer. Le secret est stocké chiffré.",
+        "reconnectTitle": "Remplacer la clé Bybit",
+        "reconnectDescription": "Collez une nouvelle clé en lecture seule. Les transactions, catégories et règles existantes sont conservées."
+      },
       "reconnectTitle": "Reconnecter avec de nouveaux identifiants",
       "reconnectDescription": "Saisissez à nouveau votre identifiant et votre mot de passe pour renouveler cette connexion sur place. Les comptes, opérations, catégories et règles existants sont conservés.",
       "reconnect": "Reconnecter"

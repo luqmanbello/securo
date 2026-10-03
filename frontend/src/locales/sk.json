@@ -1052,6 +1052,17 @@
         "title": "Pripojiť cez Access Bank",
         "description": "Zadajte používateľské ID a heslo do internet bankingu Access Bank, aby ste prepojili svoje účty."
       },
+      "bybit": {
+        "title": "Pripojiť Bybit",
+        "description": "Vložte API kľúč Bybit len na čítanie. Vytvorte ho v Bybit v Profile → API → Create New Key s možnosťou Read-Only a zaškrtnite Wallet, Earn a Bybit Card.",
+        "apiKeyLabel": "API kľúč",
+        "apiKeyPlaceholder": "Váš API kľúč Bybit",
+        "apiSecretLabel": "API tajomstvo",
+        "apiSecretPlaceholder": "Vaše API tajomstvo Bybit",
+        "privacyNote": "Securo prijíma iba API kľúče len na čítanie. Vidí váš zostatok a transakcie, ale nemôže obchodovať ani vyberať. Tajomstvo sa ukladá šifrované.",
+        "reconnectTitle": "Nahradiť kľúč Bybit",
+        "reconnectDescription": "Vložte nový kľúč len na čítanie. Existujúce transakcie, kategórie a pravidlá zostanú zachované."
+      },
       "reconnectTitle": "Znovu pripojiť s novými údajmi",
       "reconnectDescription": "Znovu zadajte používateľské ID a heslo, aby ste toto pripojenie obnovili na mieste. Existujúce účty, transakcie, kategórie a pravidlá zostanú zachované.",
       "reconnect": "Znovu pripojiť"

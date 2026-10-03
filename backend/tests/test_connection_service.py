@@ -5207,3 +5207,30 @@ async def test_ensure_group_relocates_wallet_when_connection_moves_workspaces(
     assert group.connection_id == conn.id
     assert group.workspace_id == test_workspace.id
     assert group.name == "Moved Wallet"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unique_ids, expect_cleanup", [(True, False), (False, True)])
+async def test_phantom_cleanup_skips_providers_whose_ids_are_unique_movements(
+    session: AsyncSession, test_user, test_workspace, unique_ids, expect_cleanup
+):
+    """A provider whose external_ids are unique ledger movements (Bybit) never
+    double-reports, so the phantom heuristic can only delete real rows there:
+    two equal 'Bybit deposit' rows a day apart look like a phantom pair."""
+    conn = await _make_connection(session, test_user.id, "Ledger Bank")
+
+    mock_provider = AsyncMock()
+    mock_provider.movement_ids_are_unique = unique_ids
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(external_id="ledger-acc", name="Ledger", type="checking", balance=Decimal("10"), currency="USD"),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service._cleanup_phantom_duplicates", new_callable=AsyncMock) as cleanup:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    assert cleanup.await_count == (1 if expect_cleanup else 0)

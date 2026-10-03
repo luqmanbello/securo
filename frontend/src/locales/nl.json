@@ -990,6 +990,17 @@
         "title": "Verbinden via Access Bank",
         "description": "Voer je gebruikersnaam en wachtwoord van Access Bank internetbankieren in om je rekeningen te koppelen."
       },
+      "bybit": {
+        "title": "Bybit koppelen",
+        "description": "Plak een alleen-lezen Bybit API-sleutel. Maak die in Bybit via Profile → API → Create New Key, met Read-Only, en vink Wallet, Earn en Bybit Card aan.",
+        "apiKeyLabel": "API-sleutel",
+        "apiKeyPlaceholder": "Je Bybit API-sleutel",
+        "apiSecretLabel": "API-geheim",
+        "apiSecretPlaceholder": "Je Bybit API-geheim",
+        "privacyNote": "Securo accepteert alleen een alleen-lezen API-sleutel. Die kan je saldo en transacties zien, maar niet handelen of opnemen. Het geheim wordt versleuteld opgeslagen.",
+        "reconnectTitle": "Bybit-sleutel vervangen",
+        "reconnectDescription": "Plak een nieuwe alleen-lezen sleutel. Bestaande transacties, categorieën en regels blijven behouden."
+      },
       "reconnectTitle": "Opnieuw verbinden met nieuwe inloggegevens",
       "reconnectDescription": "Voer je gebruikersnaam en wachtwoord opnieuw in om deze verbinding ter plekke te vernieuwen. Bestaande rekeningen, transacties, categorieën en regels blijven behouden.",
       "reconnect": "Opnieuw verbinden"

@@ -989,6 +989,17 @@
         "title": "Über Access Bank verbinden",
         "description": "Geben Sie Ihre Access-Bank-Benutzerkennung und Ihr Online-Banking-Passwort ein, um Ihre Konten zu verknüpfen."
       },
+      "bybit": {
+        "title": "Bybit verbinden",
+        "description": "Fügen Sie einen schreibgeschützten Bybit-API-Schlüssel ein. Erstellen Sie ihn in Bybit unter Profile → API → Create New Key mit „Read-Only“ und aktivieren Sie Wallet, Earn und Bybit Card.",
+        "apiKeyLabel": "API-Schlüssel",
+        "apiKeyPlaceholder": "Ihr Bybit-API-Schlüssel",
+        "apiSecretLabel": "API-Secret",
+        "apiSecretPlaceholder": "Ihr Bybit-API-Secret",
+        "privacyNote": "Securo akzeptiert nur schreibgeschützte API-Schlüssel. Er kann Ihren Saldo und Ihre Buchungen sehen, aber weder handeln noch abheben. Das Secret wird verschlüsselt gespeichert.",
+        "reconnectTitle": "Bybit-Schlüssel ersetzen",
+        "reconnectDescription": "Fügen Sie einen neuen schreibgeschützten Schlüssel ein. Bestehende Buchungen, Kategorien und Regeln bleiben erhalten."
+      },
       "reconnectTitle": "Mit neuen Zugangsdaten erneut verbinden",
       "reconnectDescription": "Geben Sie Benutzerkennung und Passwort erneut ein, um diese Verbindung an Ort und Stelle zu erneuern. Vorhandene Konten, Umsätze, Kategorien und Regeln bleiben erhalten.",
       "reconnect": "Erneut verbinden"

@@ -14,11 +14,24 @@ import {
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 
+export interface CredentialField {
+  name: string
+  label_key: string
+  placeholder_key?: string
+  secret: boolean
+}
+
+const DEFAULT_FIELDS: CredentialField[] = [
+  { name: 'user_id', label_key: 'accounts.credentialsConnect.userIdLabel', placeholder_key: 'accounts.credentialsConnect.userIdPlaceholder', secret: false },
+  { name: 'password', label_key: 'accounts.credentialsConnect.passwordLabel', placeholder_key: 'accounts.credentialsConnect.passwordPlaceholder', secret: true },
+]
+
 interface CredentialsConnectDialogProps {
   open: boolean
   onClose: () => void
   provider: string
   reconnectConnectionId?: string
+  fields?: CredentialField[]
 }
 
 export function CredentialsConnectDialog({
@@ -26,30 +39,34 @@ export function CredentialsConnectDialog({
   onClose,
   provider,
   reconnectConnectionId,
+  fields,
 }: CredentialsConnectDialogProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [userId, setUserId] = useState('')
-  const [password, setPassword] = useState('')
+  const formFields = fields && fields.length > 0 ? fields : DEFAULT_FIELDS
+  const [values, setValues] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (!open) {
-      setUserId('')
-      setPassword('')
+      setValues({})
       setSubmitting(false)
     }
   }, [open])
+
+  // Secrets are sent exactly as typed; everything else is trimmed.
+  const cleaned = (f: CredentialField) => (f.secret ? values[f.name] ?? '' : (values[f.name] ?? '').trim())
+  const complete = formFields.every((f) => cleaned(f) !== '')
 
   const i18nKey = `accounts.credentialsConnect.${provider}`
   const isReconnect = Boolean(reconnectConnectionId)
 
   const handleSubmit = async () => {
-    if (!userId.trim() || !password) return
+    if (!complete) return
     setSubmitting(true)
     try {
       await connections.handleCallback(
-        JSON.stringify({ user_id: userId.trim(), password }),
+        JSON.stringify(Object.fromEntries(formFields.map((f) => [f.name, cleaned(f)]))),
         provider,
         undefined,
         undefined,
@@ -89,48 +106,36 @@ export function CredentialsConnectDialog({
         </DialogHeader>
 
         <p className="text-xs text-muted-foreground">
-          {t('accounts.credentialsConnect.privacyNote')}
+          {t(`${i18nKey}.privacyNote`, t('accounts.credentialsConnect.privacyNote'))}
         </p>
 
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium" htmlFor="securo-credentials-user-id">
-            {t('accounts.credentialsConnect.userIdLabel')}
-          </label>
-          <input
-            id="securo-credentials-user-id"
-            type="text"
-            className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
-            placeholder={t('accounts.credentialsConnect.userIdPlaceholder')}
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-            spellCheck={false}
-            autoComplete="off"
-            disabled={submitting}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium" htmlFor="securo-credentials-password">
-            {t('accounts.credentialsConnect.passwordLabel')}
-          </label>
-          <input
-            id="securo-credentials-password"
-            type="password"
-            className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
-            placeholder={t('accounts.credentialsConnect.passwordPlaceholder')}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            spellCheck={false}
-            autoComplete="off"
-            disabled={submitting}
-          />
-        </div>
+        {formFields.map((f) => {
+          const id = `securo-credentials-${f.name}`
+          return (
+            <div key={f.name} className="space-y-1.5">
+              <label className="text-sm font-medium" htmlFor={id}>
+                {t(f.label_key)}
+              </label>
+              <input
+                id={id}
+                type={f.secret ? 'password' : 'text'}
+                className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
+                placeholder={f.placeholder_key ? t(f.placeholder_key) : undefined}
+                value={values[f.name] ?? ''}
+                onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+                spellCheck={false}
+                autoComplete={f.secret ? 'new-password' : 'off'}
+                disabled={submitting}
+              />
+            </div>
+          )
+        })}
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={submitting}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={handleSubmit} disabled={!userId.trim() || !password || submitting}>
+          <Button onClick={handleSubmit} disabled={!complete || submitting}>
             {submitting
               ? t('accounts.credentialsConnect.connecting')
               : t(isReconnect ? 'accounts.credentialsConnect.reconnect' : 'accounts.credentialsConnect.connect')}

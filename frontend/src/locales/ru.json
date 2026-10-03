@@ -1001,6 +1001,17 @@
         "title": "Подключить через Access Bank",
         "description": "Введите идентификатор пользователя и пароль интернет-банка Access Bank, чтобы привязать счета."
       },
+      "bybit": {
+        "title": "Подключить Bybit",
+        "description": "Вставьте API-ключ Bybit только для чтения. Создайте его в Bybit в разделе Profile → API → Create New Key, выберите Read-Only и отметьте Wallet, Earn и Bybit Card.",
+        "apiKeyLabel": "API-ключ",
+        "apiKeyPlaceholder": "Ваш API-ключ Bybit",
+        "apiSecretLabel": "API-секрет",
+        "apiSecretPlaceholder": "Ваш API-секрет Bybit",
+        "privacyNote": "Securo принимает только API-ключи только для чтения. Ключ видит баланс и операции, но не может торговать или выводить средства. Секрет хранится в зашифрованном виде.",
+        "reconnectTitle": "Заменить ключ Bybit",
+        "reconnectDescription": "Вставьте новый ключ только для чтения. Существующие операции, категории и правила сохранятся."
+      },
       "reconnectTitle": "Переподключить с новыми данными",
       "reconnectDescription": "Введите идентификатор и пароль заново, чтобы обновить это подключение на месте. Существующие счета, операции, категории и правила сохранятся.",
       "reconnect": "Переподключить"

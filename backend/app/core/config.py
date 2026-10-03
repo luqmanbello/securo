@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     # uppercase. Owner decision: the owner tracks their naira account by
     # hand and does not want it auto-imported.
     accessbank_import_currencies: str = ""
+    # Bybit (read-only API key, per connection). Off by default; credentials
+    # are stored per connection, never in the environment.
+    bybit_enabled: bool = False
+    bybit_base_url: str = "https://api.bybit.com"
 
     # Frontend
     frontend_url: str = "http://localhost:5173"
