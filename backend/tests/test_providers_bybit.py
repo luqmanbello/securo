@@ -355,3 +355,12 @@ async def test_wrong_secret_at_connect_says_so():
     with pytest.raises(ProviderUserActionRequired) as exc:
         await _run(BadSig(), lambda p: p.handle_oauth_callback(json.dumps({"api_key": FAKE_KEY, "api_secret": FAKE_SECRET})))
     assert exc.value.code == "bybit_secret_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_empty_balance_strings_count_as_zero():
+    # Seen live: Unified returns walletBalance "" for USD when the coin filter
+    # names a coin the wallet has never held.
+    fake = FakeBybit(uta=[{"coin": "USDT", "walletBalance": "0"}, {"coin": "USD", "walletBalance": ""}])
+    [acc] = await _run(fake, lambda p: p.get_accounts(_creds()))
+    assert acc.balance == Decimal("120.11")  # 100.10 FUND + 20.01 Earn

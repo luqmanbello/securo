@@ -228,16 +228,16 @@ class BybitProvider(BankProvider):
         fund = await client.get(PATH_FUND_BALANCE, {"accountType": "FUND"}, "balance_fund")
         for row in fund.get("balance") or []:
             if isinstance(row, dict) and row.get("coin") in STABLE:
-                total += _money(row.get("walletBalance"), "balance_fund")
+                total += _money(row.get("walletBalance") or "0", "balance_fund")
         uta = await client.get(PATH_UTA_BALANCE, {"accountType": "UNIFIED", "coin": "USDT,USDC,USD"}, "balance_uta")
         for account in uta.get("list") or []:
             for row in (account or {}).get("coin") or []:
                 if isinstance(row, dict) and row.get("coin") in STABLE:
-                    total += _money(row.get("walletBalance"), "balance_uta")
+                    total += _money(row.get("walletBalance") or "0", "balance_uta")
         earn = await client.get(PATH_EARN_POSITION, {"category": "FlexibleSaving"}, "balance_earn")
         for row in earn.get("list") or []:
             if isinstance(row, dict) and row.get("coin") in STABLE:
-                total += _money(row.get("amount"), "balance_earn") + _money(row.get("claimableYield") or "0", "balance_earn")
+                total += _money(row.get("amount") or "0", "balance_earn") + _money(row.get("claimableYield") or "0", "balance_earn")
         return quantize(total)
 
     @_typed_errors("accounts")
