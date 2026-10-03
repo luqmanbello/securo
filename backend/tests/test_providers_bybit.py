@@ -18,6 +18,7 @@ from app.agents.services.crypto import encrypt
 from app.providers import KNOWN_PROVIDERS, all_known_providers
 from app.providers.base import ProviderUserActionRequired, SessionExpiredError
 from app.providers.bybit import ACCOUNT_EXTERNAL_ID, BybitProvider
+from app.providers.bybit_client import BybitError
 
 
 def test_bybit_is_a_known_credentials_provider_with_its_own_fields():
@@ -305,3 +306,52 @@ async def test_no_exception_from_the_provider_carries_the_secret():
 def test_get_oauth_url_is_not_supported():
     with pytest.raises(NotImplementedError):
         BybitProvider().get_oauth_url("x", "y")
+
+
+def test_bybit_ids_are_unique_ledger_movements():
+    assert BybitProvider.movement_ids_are_unique is True
+
+
+@pytest.mark.asyncio
+async def test_card_total_count_of_the_wrong_type_is_a_bybit_error():
+    class Odd(FakeBybit):
+        def __call__(self, request):
+            if request.url.path == "/v5/card/transaction/query-asset-records":
+                return httpx.Response(200, json={"retCode": 0, "result": {"data": [{"x": 1}], "totalCount": "n/a"}})
+            return super().__call__(request)
+
+    with pytest.raises(BybitError):
+        await _run(Odd(), lambda p: p.get_transactions(_creds(), ACCOUNT_EXTERNAL_ID, date(2025, 10, 1)))
+
+
+@pytest.mark.asyncio
+async def test_malformed_unified_balance_is_a_bybit_error():
+    class Odd(FakeBybit):
+        def __call__(self, request):
+            if request.url.path == "/v5/account/wallet-balance":
+                return httpx.Response(200, json={"retCode": 0, "result": {"list": ["not-a-dict"]}})
+            return super().__call__(request)
+
+    with pytest.raises(BybitError):
+        await _run(Odd(), lambda p: p.get_accounts(_creds()))
+
+
+@pytest.mark.asyncio
+async def test_permissions_not_a_dict_is_treated_as_missing_earn():
+    fake = FakeBybit(query_api={**_query_api(), "permissions": ["Earn"]})
+    with pytest.raises(ProviderUserActionRequired) as exc:
+        await _run(fake, lambda p: p.handle_oauth_callback(json.dumps({"api_key": FAKE_KEY, "api_secret": FAKE_SECRET})))
+    assert exc.value.code == "bybit_key_missing_earn"
+
+
+@pytest.mark.asyncio
+async def test_wrong_secret_at_connect_says_so():
+    class BadSig(FakeBybit):
+        def __call__(self, request):
+            if request.url.path == "/v5/user/query-api":
+                return httpx.Response(200, json={"retCode": 10004, "retMsg": "Error sign"})
+            return super().__call__(request)
+
+    with pytest.raises(ProviderUserActionRequired) as exc:
+        await _run(BadSig(), lambda p: p.handle_oauth_callback(json.dumps({"api_key": FAKE_KEY, "api_secret": FAKE_SECRET})))
+    assert exc.value.code == "bybit_secret_mismatch"

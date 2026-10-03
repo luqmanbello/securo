@@ -260,6 +260,7 @@ def test_every_row_lands_in_exactly_one_bucket_and_drift_is_clean():
         L("d9", "Earn", "Easy Earn | Flexible Interest Distribution", "USDT", "I", "0.000001", T0 + 10),
         L("d10", "Withdraw", "Withdrawal", "USDT", "O", "3", T0 + 100),
     ]
+    rows = _with_running_balance(rows)
     res = build(rows, purchases=[parse_card_record(card_raw(ts_ms=T0 * 1000))])
     assert set(res.buckets) == {r.cursor for r in rows}
     assert res.buckets["d9"] == "rounded"
@@ -273,3 +274,52 @@ def test_drift_check_flags_a_wrong_emitted_total():
     res = build(rows)
     assert bybit_ledger.drift_warnings(rows, res.buckets, emitted_total=Decimal("-2.00")) != []
     assert bybit_ledger.drift_warnings(rows, res.buckets, emitted_total=Decimal("-3.00")) == []
+
+
+def _with_running_balance(rows, start=Decimal("1000")):
+    """Give placeholder rows the consistent afterAmt Bybit would report."""
+    from dataclasses import replace
+
+    balances: dict[str, Decimal] = {}
+    out = []
+    for r in sorted(rows, key=lambda r: (r.ts, r.cursor)):
+        balances[r.currency] = balances.get(r.currency, start) + r.signed
+        out.append(replace(r, after=balances[r.currency]))
+    return out
+
+
+def _chain(specs, start=Decimal("0")):
+    """Build rows whose afterAmt is a consistent running balance."""
+    out, bal = [], start
+    for cursor, busi, desc, io, amt, ts in specs:
+        bal = bal + Decimal(amt) if io == "I" else bal - Decimal(amt)
+        out.append(L(cursor, busi, desc, "USDT", io, amt, ts, after=str(bal)))
+    return out
+
+
+def test_running_balance_check_is_quiet_for_a_complete_ledger():
+    rows = _chain([
+        ("g1", "Deposit", "Deposit", "I", "100", T0),
+        ("g2", "Withdraw", "Withdrawal", "O", "30", T0 + 100),
+        ("g3", "Withdraw", "Withdrawal", "O", "10", T0 + 200),
+    ])
+    assert build(rows).warnings == []
+
+
+def test_running_balance_check_flags_a_row_bybit_did_not_return():
+    rows = _chain([
+        ("g1", "Deposit", "Deposit", "I", "100", T0),
+        ("g2", "Withdraw", "Withdrawal", "O", "30", T0 + 100),
+        ("g3", "Withdraw", "Withdrawal", "O", "10", T0 + 200),
+    ])
+    missing_middle = [rows[0], rows[2]]
+    assert any("running balance" in w for w in build(missing_middle).warnings)
+
+
+def test_running_balance_check_orders_same_second_legs_by_the_chain():
+    # Two legs in one second whose cursors sort opposite to Bybit's order.
+    rows = _chain([
+        ("z9", "Bybit Card", "Sale", "O", "50", T0),
+        ("a1", "Bybit Card", "Purchase", "O", "1", T0),
+    ], start=Decimal("100"))
+    assert not any("running balance" in w for w in build(rows).warnings)

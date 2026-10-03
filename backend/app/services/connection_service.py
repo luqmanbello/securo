@@ -2372,7 +2372,10 @@ async def sync_connection(
         # Clean up phantom duplicates: providers occasionally double-report the
         # same payment with different ids. Once transfer detection has paired
         # the real one, the orphan twin gets removed here.
-        await _cleanup_phantom_duplicates(session, connection.id)
+        # Skipped for providers whose ids are unique ledger movements: they
+        # never double-report, so the heuristic could only delete real rows.
+        if getattr(provider, "movement_ids_are_unique", False) is not True:
+            await _cleanup_phantom_duplicates(session, connection.id)
 
         # Refresh investment holdings (brokerage, fixed income, funds,
         # etc.) when enabled for this connection. Errors here are logged but

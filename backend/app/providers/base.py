@@ -257,9 +257,16 @@ class FxRateProvider(ABC):
 class BankProvider(ABC):
     """Abstract interface for open finance integrations.
 
+    ``movement_ids_are_unique``: True when every ``external_id`` names one
+    distinct ledger movement that the provider never re-reports under another
+    id. Sync then skips the phantom-duplicate cleanup, whose heuristic (same
+    amount and description a day apart) would otherwise delete real repeats.
+
     Implement this for each provider (Pluggy, Belvo, etc.)
     to enable bank account syncing via OAuth or widget flow.
     """
+
+    movement_ids_are_unique: bool = False
 
     @property
     @abstractmethod

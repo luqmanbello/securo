@@ -6,6 +6,7 @@ names. See docs/superpowers/specs/2026-10-03-bybit-provider-design.md.
 from __future__ import annotations
 
 import asyncio
+import functools
 import hashlib
 import json
 import logging
@@ -60,7 +61,34 @@ _TRANSIENT_CODES = {"network", "http_500", "http_502", "http_503", "http_504"}
 _MAX_PAGES = 200
 
 
+# The only exception types that may leave this provider. Anything else (a
+# KeyError, TypeError or ValueError from a response shape Bybit changed) is
+# turned into BybitError(stage, "schema") with no message text, so neither
+# response values nor credentials reach logs, the API or Celery results.
+_ESCAPABLE = (BybitError, SessionExpiredError, ProviderRateLimited, ProviderUserActionRequired)
+
+
+def _typed_errors(stage: str):
+    def deco(fn):
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except _ESCAPABLE:
+                raise
+            except Exception:
+                raise BybitError(stage, "schema") from None
+
+        return wrapper
+
+    return deco
+
+
 class BybitProvider(BankProvider):
+    # Every external_id is a Funding-ledger currcCursor (or the smallest one of
+    # a card cluster): one movement each, never re-reported under another id.
+    movement_ids_are_unique = True
+
     @property
     def name(self) -> str:
         return "bybit"
@@ -106,6 +134,11 @@ class BybitProvider(BankProvider):
         try:
             info = await client.get(PATH_QUERY_API, {}, "query_api")
         except BybitError as exc:
+            if claim and exc.code == "10004":
+                raise ProviderUserActionRequired(
+                    "The API secret does not match this key. Paste both again.",
+                    code="bybit_secret_mismatch",
+                ) from None
             if exc.code in _EXPIRED_CODES:
                 if claim:
                     raise ProviderUserActionRequired(
@@ -119,8 +152,8 @@ class BybitProvider(BankProvider):
                 "This Bybit key can trade or withdraw. Create a read-only key.",
                 code="bybit_key_not_read_only",
             )
-        permissions = info.get("permissions") or {}
-        if not permissions.get("Earn"):
+        permissions = info.get("permissions")
+        if not isinstance(permissions, dict) or not permissions.get("Earn"):
             raise ProviderUserActionRequired(
                 "Tick the Earn permission on the Bybit key, then reconnect.",
                 code="bybit_key_missing_earn",
@@ -151,6 +184,7 @@ class BybitProvider(BankProvider):
             )
         return key, secret
 
+    @_typed_errors("connect")
     async def handle_oauth_callback(self, code: str) -> ConnectionData:
         key, secret = self._decode_claim(code)
         key_enc, secret_enc = encrypt(key), encrypt(secret)
@@ -174,6 +208,7 @@ class BybitProvider(BankProvider):
             accounts=[self._account(balance)],
         )
 
+    @_typed_errors("refresh")
     async def refresh_credentials(self, credentials: dict) -> dict:
         """Re-checks the key on every sync (read-only, Earn) and records its
         expiry. Securo persists the returned dict as the new credentials."""
@@ -205,6 +240,7 @@ class BybitProvider(BankProvider):
                 total += _money(row.get("amount"), "balance_earn") + _money(row.get("claimableYield") or "0", "balance_earn")
         return quantize(total)
 
+    @_typed_errors("accounts")
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         key, secret = self._keys(credentials)
         async with self._client() as http:
@@ -275,6 +311,7 @@ class BybitProvider(BankProvider):
                     found.add(row.cursor)
         return found
 
+    @_typed_errors("transactions")
     async def get_transactions(
         self,
         credentials: dict,

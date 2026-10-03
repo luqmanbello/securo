@@ -257,6 +257,42 @@ def _matching_refund(cluster_ts: int, net: Decimal, refunds: list[CardRecord], u
     return None
 
 
+def _running_balance_breaks(rows: list[LedgerRow]) -> int:
+    """Count places where Bybit's own running balance does not follow on.
+
+    Each ledger row carries `afterAmt`, so in a complete fetch every row's
+    `after - signed` equals the previous row's `after` (per currency). A row
+    Bybit did not return shows up as a break. Legs posted in the same second
+    are ordered by following that chain, not by cursor.
+    """
+    breaks = 0
+    by_currency: dict[str, list[LedgerRow]] = {}
+    for row in rows:
+        by_currency.setdefault(row.currency, []).append(row)
+    for currency_rows in by_currency.values():
+        ordered = sorted(currency_rows, key=lambda r: (r.ts, r.cursor))
+        chain: list[LedgerRow] = []
+        i = 0
+        while i < len(ordered):
+            j = i
+            while j < len(ordered) and ordered[j].ts == ordered[i].ts:
+                j += 1
+            group = ordered[i:j]
+            while group:
+                prev = chain[-1].after if chain else None
+                pick = next((r for r in group if prev is not None and r.after - r.signed == prev), None)
+                if pick is None:
+                    pick = next(
+                        (r for r in group if not any(o.after == r.after - r.signed for o in group if o is not r)),
+                        group[0],
+                    )
+                chain.append(pick)
+                group.remove(pick)
+            i = j
+        breaks += sum(1 for a, b in zip(chain, chain[1:]) if b.after - b.signed != a.after)
+    return breaks
+
+
 def drift_warnings(rows: list[LedgerRow], buckets: dict[str, str], *, emitted_total: Decimal) -> list[str]:
     """Two checks the opening-balance plug would otherwise hide:
     1. every fetched row is accounted for exactly once;
@@ -271,6 +307,9 @@ def drift_warnings(rows: list[LedgerRow], buckets: dict[str, str], *, emitted_to
     gap = quantize(ledger_emitted) - quantize(emitted_total)
     if abs(gap) > CENT * max(1, sum(1 for b in buckets.values() if b == "emitted")) / 2:
         warnings.append(f"bybit drift: emitted total differs from ledger by {gap}")
+    breaks = _running_balance_breaks(rows)
+    if breaks:
+        warnings.append(f"bybit drift: running balance breaks {breaks} time(s); a ledger row may be missing")
     usd_pair_total = sum((r.signed for r in rows if buckets.get(r.cursor) == "usd_pair"), Decimal("0"))
     if usd_pair_total != 0:
         warnings.append(f"bybit drift: skipped USD card pairs do not net to zero ({usd_pair_total})")
