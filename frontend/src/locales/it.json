@@ -989,6 +989,17 @@
         "title": "Connetti tramite Access Bank",
         "description": "Inserisci ID utente e password dell'internet banking Access Bank per collegare i tuoi conti."
       },
+      "bybit": {
+        "title": "Collega Bybit",
+        "description": "Incolla una chiave API Bybit di sola lettura. Creala in Bybit da Profile → API → Create New Key, con Read-Only, e seleziona Wallet, Earn e Bybit Card.",
+        "apiKeyLabel": "Chiave API",
+        "apiKeyPlaceholder": "La tua chiave API Bybit",
+        "apiSecretLabel": "Segreto API",
+        "apiSecretPlaceholder": "Il tuo segreto API Bybit",
+        "privacyNote": "Securo accetta solo chiavi API di sola lettura. Può vedere saldo e transazioni, ma non può fare trading né prelievi. Il segreto è salvato cifrato.",
+        "reconnectTitle": "Sostituisci la chiave Bybit",
+        "reconnectDescription": "Incolla una nuova chiave di sola lettura. Transazioni, categorie e regole esistenti vengono mantenute."
+      },
       "reconnectTitle": "Riconnetti con nuove credenziali",
       "reconnectDescription": "Reinserisci ID utente e password per rinnovare questa connessione al suo posto. Conti, movimenti, categorie e regole esistenti vengono mantenuti.",
       "reconnect": "Riconnetti"

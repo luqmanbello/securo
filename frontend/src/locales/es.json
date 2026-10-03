@@ -989,6 +989,17 @@
         "title": "Conectar con Access Bank",
         "description": "Introduce tu identificador y contraseña de banca en línea de Access Bank para vincular tus cuentas."
       },
+      "bybit": {
+        "title": "Conectar Bybit",
+        "description": "Pega una clave API de Bybit de solo lectura. Créala en Bybit en Profile → API → Create New Key, con Read-Only, y marca Wallet, Earn y Bybit Card.",
+        "apiKeyLabel": "Clave API",
+        "apiKeyPlaceholder": "Tu clave API de Bybit",
+        "apiSecretLabel": "Secreto API",
+        "apiSecretPlaceholder": "Tu secreto API de Bybit",
+        "privacyNote": "Securo solo acepta claves API de solo lectura. Puede ver tu saldo y tus transacciones, pero no puede operar ni retirar. El secreto se guarda cifrado.",
+        "reconnectTitle": "Reemplazar la clave de Bybit",
+        "reconnectDescription": "Pega una nueva clave de solo lectura. Se conservan las transacciones, categorías y reglas existentes."
+      },
       "reconnectTitle": "Reconectar con credenciales nuevas",
       "reconnectDescription": "Vuelve a introducir tu identificador y contraseña para renovar esta conexión en su sitio. Se conservan las cuentas, los movimientos, las categorías y las reglas existentes.",
       "reconnect": "Reconectar"

@@ -976,6 +976,17 @@
         "title": "Connect via Access Bank",
         "description": "Enter your Access Bank internet-banking user ID and password to link your accounts."
       },
+      "bybit": {
+        "title": "Connect Bybit",
+        "description": "Paste a read-only Bybit API key. Create it in Bybit under Profile → API → Create New Key, with Read-Only, and tick Wallet, Earn and Bybit Card.",
+        "apiKeyLabel": "API key",
+        "apiKeyPlaceholder": "Your Bybit API key",
+        "apiSecretLabel": "API secret",
+        "apiSecretPlaceholder": "Your Bybit API secret",
+        "privacyNote": "Securo only accepts a read-only API key. It can see your balance and transactions but cannot trade or withdraw. The secret is stored encrypted.",
+        "reconnectTitle": "Replace the Bybit key",
+        "reconnectDescription": "Paste a new read-only key. Existing transactions, categories and rules are kept."
+      },
       "reconnectTitle": "Reconnect with fresh credentials",
       "reconnectDescription": "Re-enter your user ID and password to refresh this connection in place. Existing accounts, transactions, categories, and rules are preserved.",
       "reconnect": "Reconnect"

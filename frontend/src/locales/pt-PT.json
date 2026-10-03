@@ -989,6 +989,17 @@
         "title": "Ligar através do Access Bank",
         "description": "Introduza o seu ID de utilizador e palavra-passe do homebanking do Access Bank para associar as suas contas."
       },
+      "bybit": {
+        "title": "Ligar Bybit",
+        "description": "Cole uma chave de API da Bybit só de leitura. Crie-a na Bybit em Profile → API → Create New Key, com Read-Only, e selecione Wallet, Earn e Bybit Card.",
+        "apiKeyLabel": "Chave de API",
+        "apiKeyPlaceholder": "A sua chave de API da Bybit",
+        "apiSecretLabel": "Segredo da API",
+        "apiSecretPlaceholder": "O seu segredo de API da Bybit",
+        "privacyNote": "O Securo só aceita chaves de API só de leitura. Vê o seu saldo e as suas transações, mas não pode negociar nem levantar. O segredo é guardado encriptado.",
+        "reconnectTitle": "Substituir a chave da Bybit",
+        "reconnectDescription": "Cole uma nova chave só de leitura. As transações, categorias e regras existentes são mantidas."
+      },
       "reconnectTitle": "Voltar a ligar com novas credenciais",
       "reconnectDescription": "Introduza novamente o seu ID de utilizador e palavra-passe para renovar esta ligação no local. As contas, movimentos, categorias e regras existentes são preservados.",
       "reconnect": "Voltar a ligar"
