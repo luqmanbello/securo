@@ -74,9 +74,9 @@ spec:
               protocol: TCP
 
 ---
-# backend: reached only from the frontend's reverse proxy (never directly by
-# the Gateway -- the HTTPRoute has no rule pointing at it), so no `ingress`
-# entity here. `host` is still needed: the Deployment defines its own
+# backend: reached from the frontend's reverse proxy and from securo-mcp (never
+# directly by the Gateway -- the HTTPRoute has no rule pointing at it), so no
+# `ingress` entity here. `host` is still needed: the Deployment defines its own
 # liveness/readiness probes on port 8000, which kubelet hits directly.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -99,6 +99,19 @@ spec:
         - matchLabels:
             app.kubernetes.io/name: securo
             app.kubernetes.io/component: frontend
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    # securo-mcp (homelab repo, kubernetes/apps/securo-mcp): the MCP router's way
+    # into securo's API, logged in as a viewer and an editor, so securo's own role
+    # checks apply to every call. Same namespace, so no namespace label is needed;
+    # matched by its own name, so none of this file's `name: securo` rules ever
+    # select it.
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo-mcp
+            app.kubernetes.io/component: mcp-server
       toPorts:
         - ports:
             - port: "8000"
@@ -349,14 +362,11 @@ spec:
 # mcp-server: serves the agent's tools over MCP (Streamable HTTP). Added
 # 2026-08-25 with the agents feature.
 #
-# Ingress has exactly two sources, both pods in this cluster:
-#
-#   1. securo's own backend, whose agent runtime calls the tools.
-#   2. The Executor MCP gateway (namespace `executor`), added 2026-09-15 on
-#      Luqman's decision to reach securo through its built-in MCP server. Its
-#      own egress policy already names this pod on 8765. Executor authenticates
-#      with its own MCP JWT and exposes every tool, reads and writes; whether a
-#      write runs or waits for approval is set in Executor's console.
+# Ingress has exactly one source: securo's own backend, whose agent runtime
+# calls the tools. The Executor MCP gateway (namespace `executor`) was a second
+# source from 2026-09-15; Executor was removed on 2026-09-30, and the MCP
+# router reaches securo through securo-mcp and the REST API instead (see the
+# securo-backend policy), so its rule is gone.
 #
 # Nothing arrives from the Gateway. The chart publishes a /mcp route whenever
 # this component is enabled, and kustomization.yaml deliberately removes it,
@@ -368,11 +378,7 @@ spec:
 # write transactions, accounts, budgets and payees straight from the
 # database, so this pod has every reason to reach Postgres and none to reach
 # the outside world: a flaw in tool handling here cannot open its own channel
-# out. Be precise about what that does and does not mean since Executor was
-# admitted: tool RESULTS now leave this namespace by design, to Executor, and
-# from there to whichever MCP clients Luqman connects. The fence stops this
-# pod exfiltrating on its own; it does not keep financial data inside the
-# cluster, and was never meant to once a gateway was chosen.
+# out. Its tool results go only to the backend's agent loop.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -388,17 +394,6 @@ spec:
         - matchLabels:
             app.kubernetes.io/name: securo
             app.kubernetes.io/component: backend
-      toPorts:
-        - ports:
-            - port: "8765"
-              protocol: TCP
-    # The namespace label is required. Without it Cilium scopes fromEndpoints
-    # to this policy's own namespace (securo), and the rule would silently
-    # match nothing while every pod stayed Healthy.
-    - fromEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: executor
-            app.kubernetes.io/name: executor
       toPorts:
         - ports:
             - port: "8765"
