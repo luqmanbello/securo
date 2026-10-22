@@ -342,7 +342,15 @@ async def auto_categorize_status(
     from app.worker import celery_app
 
     outcome = AsyncResult(str(task_id), app=celery_app)
-    if not outcome.ready():
+    try:
+        finished = outcome.ready()
+    except Exception:
+        # Redis unreachable, as when queueing: say so rather than a bare 500.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not read auto-categorization status",
+        )
+    if not finished:
         return {"status": "running"}
 
     if outcome.failed():
