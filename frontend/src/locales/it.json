@@ -951,6 +951,7 @@
     "searchPlaceholder": "Cerca transazioni...",
     "clearFilters": "Cancella filtri",
     "exportCsv": "Esporta CSV",
+    "refresh": "Aggiorna",
     "exportSelected": "Esporta selezionate ({{count}})",
     "exporting": "Esportazione...",
     "exportSuccess": "Transazioni esportate con successo",
@@ -1166,6 +1167,7 @@
     "confirmDeleteTitle": "Eliminare il conto?",
     "confirmDeleteDesc": "Questa azione è irreversibile. Eliminerà anche ogni transazione, record di importazione e transazione ricorrente collegati a questo conto, e scollegherà gli obiettivi che lo tracciavano.",
     "openingBalance": "saldo iniziale",
+    "openingBalanceDescription": "Saldo iniziale",
     "notFound": "Conto non trovato.",
     "balance": "Saldo",
     "balanceCreditCard": "Importo dovuto",
@@ -1223,6 +1225,7 @@
     "updated": "Conto aggiornato",
     "deleted": "Conto eliminato",
     "syncDone": "Sincronizzazione completata",
+    "syncRateLimited": "Limite giornaliero della banca raggiunto, nessun dato nuovo recuperato. Riprova più tardi.",
     "syncError": "Sincronizzazione fallita",
     "connected": "Banca collegata con successo",
     "connectError": "Impossibile collegare la banca",
@@ -1477,7 +1480,6 @@
     "endDate": "Data di fine (facoltativa)",
     "category": "Categoria",
     "account": "Conto",
-    "noAccount": "Nessuno",
     "nextOccurrence": "Prossima",
     "status": "Stato",
     "actions": "Azioni",
@@ -1759,8 +1761,13 @@
     "errors": {
       "invalid_date": "Formato data non valido",
       "no_amount": "Nessun importo in entrata o in uscita",
-      "invalid_amount": "Formato importo non valido"
-    }
+      "invalid_amount": "Formato importo non valido",
+      "invalid_fx_rate": "Tasso di cambio non valido",
+      "ambiguous_amount": "Entrata e uscita entrambe compilate",
+      "conflicting_amount": "Campi di importo in conflitto",
+      "invalid_direction": "Indicatore accredito/addebito non valido"
+    },
+    "selectAll": "Seleziona tutto"
   },
   "assetImport": {
     "title": "Importa ordini di investimento",
@@ -1811,6 +1818,7 @@
       "invalid_date": "data illeggibile",
       "invalid_quantity": "quantità illeggibile",
       "invalid_price": "prezzo illeggibile",
+      "invalid_fee": "commissione illeggibile",
       "invalid_kind": "acquisto/vendita non riconosciuto",
       "unknown_ticker": "ticker non trovato dal fornitore di prezzi",
       "oversell": "vendita superiore alla posizione"
@@ -1980,6 +1988,9 @@
     "inflowOutflow": "Entrate vs Uscite",
     "startingBalance": "Saldo iniziale",
     "endingBalance": "Saldo previsto",
+    "runwayNegativeOn": "Il saldo diventa negativo il {{date}}",
+    "runwayAlreadyNegative": "Già in negativo",
+    "lowestBalance": "Saldo minimo",
     "projectedIncome": "Entrate previste",
     "projectedExpenses": "Spese previste",
     "incomeExpenses": "Entrate vs Spese",
@@ -2109,6 +2120,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2183,6 +2195,8 @@
     "remove": "Rimuovi"
   },
   "splitGroups": {
+    "searchPlaceholder": "Cerca gruppi...",
+    "clearSearch": "Cancella ricerca",
     "title": "Gruppi",
     "section": "Configurazione",
     "add": "Aggiungi gruppo",

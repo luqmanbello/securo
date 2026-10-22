@@ -949,6 +949,7 @@
     "searchPlaceholder": "Search transactions...",
     "clearFilters": "Clear filters",
     "exportCsv": "Export CSV",
+    "refresh": "Refresh",
     "exportSelected": "Export Selected ({{count}})",
     "exporting": "Exporting...",
     "exportSuccess": "Transactions exported successfully",
@@ -1164,6 +1165,7 @@
     "confirmDeleteTitle": "Delete account?",
     "confirmDeleteDesc": "This action is irreversible. It will also delete every transaction, import record and recurring transaction attached to this account, and unlink any goals that were tracking it.",
     "openingBalance": "opening balance",
+    "openingBalanceDescription": "Opening balance",
     "notFound": "Account not found.",
     "balance": "Balance",
     "balanceCreditCard": "Amount owed",
@@ -1219,6 +1221,7 @@
     "updated": "Account updated",
     "deleted": "Account deleted",
     "syncDone": "Sync completed",
+    "syncRateLimited": "Bank daily limit reached, no new data was fetched. Try again later.",
     "syncError": "Sync failed",
     "connected": "Bank connected successfully",
     "connectError": "Failed to connect bank",
@@ -1473,7 +1476,6 @@
     "endDate": "End date (optional)",
     "category": "Category",
     "account": "Account",
-    "noAccount": "None",
     "nextOccurrence": "Next",
     "status": "Status",
     "actions": "Actions",
@@ -1755,8 +1757,13 @@
     "errors": {
       "invalid_date": "Invalid Date Format",
       "no_amount": "No Inflow or Outflow Amount",
-      "invalid_amount": "Invalid Amount Format"
-    }
+      "invalid_amount": "Invalid Amount Format",
+      "invalid_fx_rate": "Invalid Exchange Rate",
+      "ambiguous_amount": "Both Inflow and Outflow Filled",
+      "conflicting_amount": "Conflicting Amount Fields",
+      "invalid_direction": "Invalid Credit or Debit Indicator"
+    },
+    "selectAll": "Select all"
   },
   "assetImport": {
     "title": "Import investment orders",
@@ -1807,6 +1814,7 @@
       "invalid_date": "unreadable date",
       "invalid_quantity": "unreadable quantity",
       "invalid_price": "unreadable price",
+      "invalid_fee": "unreadable fee",
       "invalid_kind": "unrecognised buy/sell value",
       "unknown_ticker": "ticker not found by the price provider",
       "oversell": "selling more units than the position holds"
@@ -1976,6 +1984,9 @@
     "inflowOutflow": "Inflow vs Outflow",
     "startingBalance": "Starting Balance",
     "endingBalance": "Projected Balance",
+    "runwayNegativeOn": "Balance goes negative on {{date}}",
+    "runwayAlreadyNegative": "Already negative",
+    "lowestBalance": "Lowest balance",
     "projectedIncome": "Projected Income",
     "projectedExpenses": "Projected Expenses",
     "incomeExpenses": "Income vs Expenses",
@@ -2105,6 +2116,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2179,6 +2191,8 @@
     "remove": "Remove"
   },
   "splitGroups": {
+    "searchPlaceholder": "Search groups...",
+    "clearSearch": "Clear search",
     "title": "Groups",
     "section": "Setup",
     "add": "Add group",
