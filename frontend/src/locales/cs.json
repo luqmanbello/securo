@@ -902,6 +902,14 @@
     "uncategorizedCta_other": "{{count}} transakcí čeká na kategorizaci",
     "uncategorizedTotal": "{{amount}} celkem",
     "categorizeNow": "Kategorizovat teď",
+    "autoCategorize": "Automaticky kategorizovat pomocí AI",
+    "autoCategorizeRunning": "Kategorizuje se…",
+    "autoCategorizeDone": "Automaticky kategorizováno: {{count}}",
+    "autoCategorizeUnsure": "Ponecháno na vás: {{count}} — nedostatečná jistota",
+    "autoCategorizeNothing": "Nic se nepodařilo automaticky kategorizovat",
+    "autoCategorizeNoProvider": "Nejprve připojte AI model v sekci Agenti",
+    "autoCategorizeDisabled": "Funkce agentů je vypnutá",
+    "autoCategorizeStillRunning": "Stále běží na pozadí — výsledky se brzy zobrazí",
     "allCategorized": "Vše hotovo!",
     "allCategorizedDesc": "Všechny transakce mají kategorii",
     "assetsValue": "Investovaná aktiva",
@@ -1369,6 +1377,35 @@
       },
       "reconnectTitle": "Znovu propojit s novým tokenem",
       "reconnectDescription": "Vložte nový setup token a obnovte toto propojení na místě. Stávající účty, transakce, kategorie a pravidla zůstanou zachovány.",
+      "reconnect": "Znovu propojit"
+    },
+    "credentialsConnect": {
+      "defaultTitle": "Propojit pomocí přihlašovacích údajů",
+      "defaultDescription": "Zadejte své uživatelské ID a heslo k internetovému bankovnictví pro propojení svých účtů.",
+      "userIdLabel": "Uživatelské ID",
+      "userIdPlaceholder": "Vaše uživatelské ID k internetovému bankovnictví",
+      "passwordLabel": "Heslo",
+      "passwordPlaceholder": "Vaše heslo k internetovému bankovnictví",
+      "privacyNote": "Toto jsou vaše přihlašovací údaje k internetovému bankovnictví. Securo je používá pouze pro čtení, k načtení zůstatků a transakcí.",
+      "connect": "Propojit",
+      "connecting": "Propojuje se…",
+      "accessbank": {
+        "title": "Propojit přes Access Bank",
+        "description": "Zadejte své uživatelské ID a heslo k internetovému bankovnictví Access Bank pro propojení svých účtů."
+      },
+      "bybit": {
+        "title": "Propojit Bybit",
+        "description": "Vložte Bybit API klíč pouze pro čtení. Vytvořte ho v Bybitu v Profile → API → Create New Key s volbou Read-Only a zaškrtněte Wallet, Earn a Bybit Card.",
+        "apiKeyLabel": "API klíč",
+        "apiKeyPlaceholder": "Váš Bybit API klíč",
+        "apiSecretLabel": "API secret",
+        "apiSecretPlaceholder": "Váš Bybit API secret",
+        "privacyNote": "Securo přijímá jen API klíč pouze pro čtení. Vidí váš zůstatek a transakce, ale nemůže obchodovat ani vybírat prostředky. Secret se ukládá zašifrovaný.",
+        "reconnectTitle": "Nahradit Bybit klíč",
+        "reconnectDescription": "Vložte nový klíč pouze pro čtení. Stávající transakce, kategorie a pravidla zůstanou zachovány."
+      },
+      "reconnectTitle": "Znovu propojit s novými přihlašovacími údaji",
+      "reconnectDescription": "Znovu zadejte uživatelské ID a heslo a obnovte toto propojení na místě. Stávající účty, transakce, kategorie a pravidla zůstanou zachovány.",
       "reconnect": "Znovu propojit"
     },
     "providers": {

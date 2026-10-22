@@ -870,6 +870,14 @@
     "uncategorizedCta": "{{count}} tranzakció vár kategorizálásra",
     "uncategorizedTotal": "Összesen {{amount}}",
     "categorizeNow": "Kategorizálás most",
+    "autoCategorize": "Automatikus kategorizálás AI-jal",
+    "autoCategorizeRunning": "Kategorizálás…",
+    "autoCategorizeDone": "{{count}} automatikusan kategorizálva",
+    "autoCategorizeUnsure": "{{count}} rád maradt — nem elég biztos",
+    "autoCategorizeNothing": "Semmit sem sikerült automatikusan kategorizálni",
+    "autoCategorizeNoProvider": "Először csatlakoztass egy AI-modellt az Ügynököknél",
+    "autoCategorizeDisabled": "Az ügynökök funkció ki van kapcsolva",
+    "autoCategorizeStillRunning": "Még fut a háttérben — az eredmények hamarosan megjelennek",
     "allCategorized": "Minden rendben!",
     "allCategorizedDesc": "Minden tranzakció kategorizálva van",
     "assetsValue": "Befektetett eszközök",
@@ -1285,6 +1293,35 @@
       },
       "reconnectTitle": "Újracsatlakozás új tokennel",
       "reconnectDescription": "Illessz be egy új beállítási tokent a kapcsolat helyben történő frissítéséhez. A meglévő számlák, tranzakciók, kategóriák és szabályok megmaradnak.",
+      "reconnect": "Újracsatlakozás"
+    },
+    "credentialsConnect": {
+      "defaultTitle": "Csatlakozás bejelentkezési adatokkal",
+      "defaultDescription": "Add meg a netbanki felhasználói azonosítódat és jelszavadat a számláid összekapcsolásához.",
+      "userIdLabel": "Felhasználói azonosító",
+      "userIdPlaceholder": "A netbanki felhasználói azonosítód",
+      "passwordLabel": "Jelszó",
+      "passwordPlaceholder": "A netbanki jelszavad",
+      "privacyNote": "Ezek a netbanki bejelentkezési adataid. A Securo csak olvasásra használja őket, az egyenlegek és tranzakciók lekéréséhez.",
+      "connect": "Csatlakozás",
+      "connecting": "Csatlakozás…",
+      "accessbank": {
+        "title": "Csatlakozás Access Bankon keresztül",
+        "description": "Add meg az Access Bank netbanki felhasználói azonosítódat és jelszavadat a számláid összekapcsolásához."
+      },
+      "bybit": {
+        "title": "Bybit csatlakoztatása",
+        "description": "Illessz be egy csak olvasható Bybit API-kulcsot. A Bybitben hozd létre itt: Profile → API → Create New Key, Read-Only beállítással, és jelöld be a Wallet, Earn és Bybit Card lehetőséget.",
+        "apiKeyLabel": "API-kulcs",
+        "apiKeyPlaceholder": "A Bybit API-kulcsod",
+        "apiSecretLabel": "API secret",
+        "apiSecretPlaceholder": "A Bybit API secret kulcsod",
+        "privacyNote": "A Securo kizárólag csak olvasható API-kulcsot fogad el. Látja az egyenlegedet és a tranzakcióidat, de nem tud kereskedni vagy pénzt felvenni. A secret titkosítva tárolódik.",
+        "reconnectTitle": "Bybit-kulcs cseréje",
+        "reconnectDescription": "Illessz be egy új, csak olvasható kulcsot. A meglévő tranzakciók, kategóriák és szabályok megmaradnak."
+      },
+      "reconnectTitle": "Újracsatlakozás új bejelentkezési adatokkal",
+      "reconnectDescription": "Add meg újra a felhasználói azonosítódat és jelszavadat a kapcsolat helyben történő frissítéséhez. A meglévő számlák, tranzakciók, kategóriák és szabályok megmaradnak.",
       "reconnect": "Újracsatlakozás"
     },
     "providers": {
