@@ -158,6 +158,22 @@ def origin_allowed(origin: Optional[str], allowed: frozenset[str]) -> bool:
     return origin.rstrip("/") in allowed
 
 
+# Proposals whose apply step only inserts a new row and touches nothing that
+# already exists. Listed by name rather than matched by prefix:
+# `propose_create_rule` can apply the new rule to existing transactions and
+# overwrite their categories.
+ADDITIVE_PROPOSALS = frozenset(
+    {
+        "propose_create_budget",
+        "propose_create_category",
+        "propose_create_goal",
+        "propose_create_payee_rule",
+        "propose_create_recurring_transaction",
+        "propose_create_transaction",
+    }
+)
+
+
 def tool_annotations(name: str, *, is_proposal: bool) -> dict[str, Any]:
     """Behaviour hints for one tool, derived from what it can do.
 
@@ -166,16 +182,17 @@ def tool_annotations(name: str, *, is_proposal: bool) -> dict[str, Any]:
 
     - Every non-proposal tool only reads.
     - A proposal can write when an external caller applies it, so it is never
-      read-only. `propose_create_*` tools only add rows, so they are marked
-      non-destructive. Every other proposal omits `destructiveHint`, which
-      the spec defaults to true — `propose_categorize` overwrites categories
-      in bulk and `propose_cancel_recurring_transaction` can hard-delete, and
-      a tool added later inherits the cautious default rather than a guess.
+      read-only. The proposals in `ADDITIVE_PROPOSALS` only add rows, so they
+      are marked non-destructive. Every other proposal omits
+      `destructiveHint`, which the spec defaults to true —
+      `propose_categorize` overwrites categories in bulk and
+      `propose_cancel_recurring_transaction` can hard-delete, and a tool added
+      later inherits the cautious default rather than a guess.
     - Nothing here reaches outside Securo's own ledger.
     """
     if not is_proposal:
         return {"readOnlyHint": True, "openWorldHint": False}
     hints: dict[str, Any] = {"readOnlyHint": False, "openWorldHint": False}
-    if name.startswith("propose_create_"):
+    if name in ADDITIVE_PROPOSALS:
         hints["destructiveHint"] = False
     return hints

@@ -23,6 +23,8 @@ from app.models.goal import Goal
 from app.models.credit_card_bill import CreditCardBill
 from app.models.group import Group, GroupMember
 from app.models.transaction_split import TransactionSplit
+from app.models.transaction_category_line import TransactionCategoryLine
+from app.models.recurring_transaction_category_line import RecurringTransactionCategoryLine
 from app.models.group_settlement import GroupSettlement
 from app.models.collection import Collection, collection_accounts, collection_asset_groups
 from app.models.invoice import (
@@ -35,6 +37,7 @@ from app.models.invoice import (
 )
 from app.models.invoice_attachment import InvoiceAttachment
 from app.models.invoice_schedule import InvoiceSchedule, InvoiceScheduleTerm
+from app.models.mortgage_payment_allocation import MortgagePaymentAllocation
 from app.models.product import Product, ProductPrice
 from app.models.reconciliation import (
     ReconciliationEvent,
@@ -78,6 +81,8 @@ __all__ = [
     "Group",
     "GroupMember",
     "TransactionSplit",
+    "TransactionCategoryLine",
+    "RecurringTransactionCategoryLine",
     "GroupSettlement",
     "Collection",
     "Invoice",
@@ -89,6 +94,7 @@ __all__ = [
     "InvoiceInstallment",
     "InvoiceSchedule",
     "InvoiceScheduleTerm",
+    "MortgagePaymentAllocation",
     "Product",
     "ProductPrice",
     "ReconciliationEvent",
