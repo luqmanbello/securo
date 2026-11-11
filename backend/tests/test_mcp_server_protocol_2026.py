@@ -154,9 +154,9 @@ async def test_tool_list_order_is_deterministic(test_user):
 
 @pytest.mark.asyncio
 async def test_annotations_tell_a_gateway_which_tools_write(test_user):
-    """Reads are read-only; proposals are not. Only `propose_create_*` claims
-    to be additive; everything else that writes keeps the spec's cautious
-    default (destructiveHint absent = true)."""
+    """Reads are read-only; proposals are not. Only proposals that just add a
+    row claim to be additive; everything else that writes keeps the spec's
+    cautious default (destructiveHint absent = true)."""
     async with _client() as cli:
         r = await cli.post(
             "/mcp",
@@ -171,6 +171,9 @@ async def test_annotations_tell_a_gateway_which_tools_write(test_user):
     # Bulk overwrite and hard delete must not be advertised as harmless.
     assert "destructiveHint" not in tools["propose_categorize"]["annotations"]
     assert "destructiveHint" not in tools["propose_cancel_recurring_transaction"]["annotations"]
+    # A new rule can be applied to existing transactions and overwrite their
+    # categories, so "create" in the name is not enough.
+    assert "destructiveHint" not in tools["propose_create_rule"]["annotations"]
     for name, tool in tools.items():
         is_proposal = tool["_meta"]["com.usesecuro/tool"]["is_proposal"]
         assert tool["annotations"]["readOnlyHint"] is (not is_proposal), name
