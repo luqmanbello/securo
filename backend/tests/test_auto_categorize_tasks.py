@@ -1,9 +1,13 @@
 """The celery task and the post-sync hook that dispatches it."""
 import uuid
+from collections import namedtuple
 
 import pytest
 
 from app.tasks import categorize_tasks, sync_tasks
+
+# The stale-connection query's row: unpacks like a tuple, reads like a Row.
+_Row = namedtuple("_Row", "id user_id last_sync_at settings")
 
 
 def test_task_returns_the_service_result_stamped_with_its_workspace(monkeypatch):
@@ -134,7 +138,7 @@ async def test_sync_all_queues_each_synced_workspace_once(monkeypatch):
 
     class _Result:
         def all(self):
-            return [(conn_a, user, None, {}), (conn_b, user, None, {})]
+            return [_Row(conn_a, user, None, {}), _Row(conn_b, user, None, {})]
 
     class _Session:
         async def execute(self, *_a, **_k):
@@ -157,8 +161,9 @@ async def test_sync_all_queues_each_synced_workspace_once(monkeypatch):
         sync_tasks, "_make_session_maker", lambda: (_Engine(), lambda: _Session())
     )
 
-    async def _fake_sync_one(session_maker, connection_id, user_id, **_kw):
-        return ws
+    async def _fake_sync_one(session_maker, connection_id, user_id, **kw):
+        kw["categorize_targets"].add((ws, user_id))
+        return "refreshed"
 
     monkeypatch.setattr(sync_tasks, "_sync_one", _fake_sync_one)
 
@@ -167,7 +172,7 @@ async def test_sync_all_queues_each_synced_workspace_once(monkeypatch):
 
     synced = await sync_tasks._sync_all()
 
-    assert synced == 2
+    assert synced["synced"] == 2
     assert queued == [{(ws, user)}]
 
 
@@ -178,7 +183,7 @@ async def test_sync_all_does_not_queue_a_connection_that_failed(monkeypatch):
 
     class _Result:
         def all(self):
-            return [(conn, user, None, {})]
+            return [_Row(conn, user, None, {})]
 
     class _Session:
         async def execute(self, *_a, **_k):
@@ -211,5 +216,5 @@ async def test_sync_all_does_not_queue_a_connection_that_failed(monkeypatch):
 
     synced = await sync_tasks._sync_all()
 
-    assert synced == 0
+    assert synced["synced"] == 0
     assert queued == [set()], "nothing synced, so nothing to categorize"

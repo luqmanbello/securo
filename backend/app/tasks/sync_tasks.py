@@ -229,17 +229,15 @@ async def _sync_all() -> dict:
                 attempt_started_at = datetime.now(timezone.utc)
                 try:
                     logger.info("Syncing connection %s (last_sync=%s)", conn_id, last_sync)
-                    result = await _sync_one(
+                    outcome = await _sync_one(
                         session_maker,
                         conn_id,
                         user_id,
                         trigger_provider_refresh=_should_trigger_provider_refresh(
                             settings, datetime.now(timezone.utc)
                         ),
+                        categorize_targets=categorize_targets,
                     )
-                    workspace_id, outcome = result if result is not None else (None, None)
-                    if workspace_id is not None:
-                        categorize_targets.add((workspace_id, user_id))
                 except ProviderNotConfiguredError as exc:
                     # Actionable one-liner instead of a buried traceback: this
                     # means THIS process is missing the provider's configuration.
@@ -293,11 +291,12 @@ async def _sync_one(
     user_id: uuid.UUID,
     *,
     trigger_provider_refresh: bool = False,
-) -> tuple[uuid.UUID, SyncOutcome] | None:
-    """Sync a single connection and return (workspace, outcome), or None if skipped.
+    categorize_targets: set[tuple[uuid.UUID, uuid.UUID]] | None = None,
+) -> SyncOutcome | None:
+    """Sync a single connection and return its outcome (None if skipped).
 
-    The workspace lets the caller queue follow-up work for it.
-    Error status is set by sync_connection itself.
+    Error status is set by sync_connection itself. A synced connection adds
+    its (workspace, user) to ``categorize_targets`` for the categorizer.
     """
     async with session_maker() as session:
         workspace_id = await session.scalar(
@@ -314,7 +313,9 @@ async def _sync_one(
                 user_id,
                 trigger_provider_refresh=trigger_provider_refresh,
             )
-        return workspace_id, outcome
+        if categorize_targets is not None:
+            categorize_targets.add((workspace_id, user_id))
+        return outcome
 
 
 def _queue_auto_categorize(pairs: set[tuple[uuid.UUID, uuid.UUID]]) -> None:
