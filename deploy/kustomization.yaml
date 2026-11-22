@@ -6,6 +6,29 @@ namespace: securo
 resources:
   - manifests.yaml
   - ciliumnetworkpolicy.yaml
+  - plugins.yaml
+  - plugin-index
+
+# The plugin runner, egress proxy and catalog run the backend image at the
+# digest the release pinned (deploy/plugins.yaml).
+replacements:
+  - source:
+      kind: Deployment
+      name: securo-backend
+      fieldPath: spec.template.spec.containers.0.image
+    targets:
+      - select:
+          kind: Deployment
+          name: securo-plugins-runner
+        fieldPaths: [spec.template.spec.containers.0.image]
+      - select:
+          kind: Deployment
+          name: securo-plugins-egress
+        fieldPaths: [spec.template.spec.containers.0.image]
+      - select:
+          kind: Deployment
+          name: securo-plugin-index
+        fieldPaths: [spec.template.spec.containers.0.image]
 
 labels:
   - pairs:
@@ -199,6 +222,33 @@ patches:
         value:
           secretRef:
             name: securo-openexchangerates
+  - target:
+      kind: Deployment
+      name: securo-backend
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-plugins
+  - target:
+      kind: Deployment
+      name: securo-worker
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-plugins
+  - target:
+      kind: Deployment
+      name: securo-beat
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: securo-plugins
   - target:
       kind: Job
       name: securo-migration

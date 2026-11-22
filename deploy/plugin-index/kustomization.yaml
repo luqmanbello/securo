@@ -1,0 +1,8 @@
+# Written by scripts/build-plugin-index.py; don't edit by hand.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: securo
+configMapGenerator:
+  - name: securo-plugin-index
+    files:
+      - index.json

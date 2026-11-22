@@ -117,6 +117,23 @@ spec:
             - port: "8000"
               protocol: TCP
   egress:
+    # Plugins with code (deploy/plugins.yaml): the runner, and the catalog.
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: runner
+      toPorts:
+        - ports:
+            - port: "8090"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: index
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system
@@ -192,6 +209,23 @@ spec:
       app.kubernetes.io/name: securo
       app.kubernetes.io/component: celery-worker
   egress:
+    # Plugins with code (deploy/plugins.yaml): the runner, and the catalog.
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: runner
+      toPorts:
+        - ports:
+            - port: "8090"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: securo
+            app.kubernetes.io/component: index
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system

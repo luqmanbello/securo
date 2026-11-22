@@ -82,6 +82,11 @@ config:
   # cherry-picking this value onto an older chart gets an unschedulable
   # beat pod with no logs.
   agentsEnabled: "true"
+  # Plugins with code: the fork's own bank plugins (plugins/*/), from the
+  # private catalog in deploy/plugins.yaml. The runner URL and token come
+  # from the securo-plugins Secret.
+  pluginsEnabled: "true"
+  pluginsIndexUrl: "http://securo-plugin-index.securo.svc.cluster.local:8080/index.json"
   # AGENTS_EXTERNAL_MCP_URL is set to https://securo.local.luqmanlabs.com/mcp
   # (since v0.20.0 the chart no longer derives it) and is left that way ON PURPOSE even though kustomization.yaml removes
   # that route, so the string currently 404s. It is a display-only value in

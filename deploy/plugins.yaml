@@ -1,0 +1,195 @@
+# Plugins with code: the runner, its egress proxy and the private catalog.
+#
+# The chart doesn't ship these yet (upstream v0.20.0 notes), so they are
+# hand-written here after docker-compose.prod.yml's `plugins-runner` and
+# `plugins-egress`. All three run the backend image; kustomization.yaml copies
+# its pinned digest onto them (`replacements`), so a release moves them too.
+#
+# No network policy selects them (no new fences). The securo
+# backend and worker policies admit their calls to the runner and the catalog.
+#
+# The catalog is the fork's own plugins (plugins/*/), packed by
+# scripts/build-plugin-index.py into deploy/plugin-index/ and served from a
+# ConfigMap. PLUGINS_INDEX_URL points here, so the public catalog isn't
+# offered on this instance.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: securo-plugins
+  namespace: securo
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: securo-plugins-runner
+  namespace: securo
+  labels: &runner
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/component: runner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: *runner
+  template:
+    metadata:
+      labels: *runner
+    spec:
+      # Reaps what killed plugin processes leave behind (compose: `init: true`).
+      shareProcessNamespace: true
+      containers:
+        - name: runner
+          image: BACKEND_IMAGE
+          command: [uvicorn, --factory, plugin_runner.main:create_app, --host, 0.0.0.0, --port, "8090"]
+          env:
+            - name: PLUGINS_EGRESS_PROXY
+              value: securo-plugins-egress:3128
+            - name: PLUGINS_CALL_TIMEOUT
+              value: "180"
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: PLUGINS_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef: {name: securo-plugins, key: PLUGINS_RUNNER_TOKEN}
+            - name: PLUGINS_EGRESS_SECRET
+              valueFrom:
+                secretKeyRef: {name: securo-plugins, key: PLUGINS_EGRESS_SECRET}
+          ports:
+            - containerPort: 8090
+          securityContext:
+            # Root only to hand each plugin its own user and clean up after it.
+            runAsUser: 0
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL]
+          resources:
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/securo-plugins}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: securo-plugins
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: securo-plugins-runner
+  namespace: securo
+spec:
+  selector:
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/component: runner
+  ports:
+    - port: 8090
+      targetPort: 8090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: securo-plugins-egress
+  namespace: securo
+  labels: &egress
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/component: egress
+spec:
+  replicas: 1
+  selector:
+    matchLabels: *egress
+  template:
+    metadata:
+      labels: *egress
+    spec:
+      containers:
+        - name: egress
+          image: BACKEND_IMAGE
+          command: [python, -m, plugin_runner.egress]
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: PLUGINS_EGRESS_SECRET
+              valueFrom:
+                secretKeyRef: {name: securo-plugins, key: PLUGINS_EGRESS_SECRET}
+          ports:
+            - containerPort: 3128
+          securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: securo-plugins-egress
+  namespace: securo
+spec:
+  selector:
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/component: egress
+  ports:
+    - port: 3128
+      targetPort: 3128
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: securo-plugin-index
+  namespace: securo
+  labels: &index
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/component: index
+spec:
+  replicas: 1
+  selector:
+    matchLabels: *index
+  template:
+    metadata:
+      labels: *index
+    spec:
+      containers:
+        - name: index
+          image: BACKEND_IMAGE
+          command: [python, -m, http.server, "8080", --directory, /srv/v1]
+          ports:
+            - containerPort: 8080
+          securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: catalog, mountPath: /srv/v1}
+      volumes:
+        - name: catalog
+          configMap:
+            name: securo-plugin-index
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: securo-plugin-index
+  namespace: securo
+spec:
+  selector:
+    app.kubernetes.io/name: securo
+    app.kubernetes.io/component: index
+  ports:
+    - port: 8080
+      targetPort: 8080
