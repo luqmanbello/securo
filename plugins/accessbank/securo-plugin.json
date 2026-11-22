@@ -1,0 +1,39 @@
+{
+  "id": "luqmanbello/accessbank",
+  "name": "Access Bank",
+  "description": "Reads balances and transaction history from Access Bank (Nigeria) internet banking. Read only: it never transfers, pays or changes anything.",
+  "version": "1.0.0",
+  "repository": "https://github.com/luqmanbello/securo",
+  "license": "AGPL-3.0-only",
+  "min_securo_version": "0.21.0",
+  "runtime": {
+    "entrypoint": "accessbank_plugin:plugin"
+  },
+  "network": [
+    {
+      "host": "ibank.accessbankplc.com",
+      "purpose": "Signs in to your Access Bank internet banking and reads your accounts' balances and transaction history"
+    }
+  ],
+  "contributes": {
+    "integrations": [
+      {
+        "key": "accessbank",
+        "name": "Access Bank",
+        "description": "Enter your Access Bank internet-banking user ID and password to link your accounts. These are your internet-banking credentials. Securo uses them read-only, to fetch balances and transactions. The first sync only links; press Sync now or wait for the next run.",
+        "auth": "credentials",
+        "fields": [
+          {"key": "user_id", "label": "User ID", "secret": true},
+          {"key": "password", "label": "Password", "secret": true},
+          {
+            "key": "import_currencies",
+            "label": "Currencies to import, comma-separated (for example USD). Leave empty to import every account",
+            "required": false
+          }
+        ],
+        "sync_minutes": 60,
+        "provides": ["accounts", "transactions"]
+      }
+    ]
+  }
+}
