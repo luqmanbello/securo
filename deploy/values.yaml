@@ -82,13 +82,14 @@ config:
   # cherry-picking this value onto an older chart gets an unschedulable
   # beat pod with no logs.
   agentsEnabled: "true"
-  # AGENTS_EXTERNAL_MCP_URL renders as https://securo.local.luqmanlabs.com/mcp
-  # and is left that way ON PURPOSE even though kustomization.yaml removes
+  # AGENTS_EXTERNAL_MCP_URL is set to https://securo.local.luqmanlabs.com/mcp
+  # (since v0.20.0 the chart no longer derives it) and is left that way ON PURPOSE even though kustomization.yaml removes
   # that route, so the string currently 404s. It is a display-only value in
   # the UI's external-token panel; nothing calls it. Blanking it is not more
   # honest -- the chart then has the frontend derive `<host>:8765/mcp`, which
   # is equally unreachable. Left pointing at the URL that WOULD work, because
   # restoring the route is the one action that makes the panel correct.
+  agentsExternalMcpUrl: "https://securo.local.luqmanlabs.com/mcp"
   # Left at the chart default `ollama` deliberately. There is no ollama in
   # this cluster; the per-agent LLM connection chosen in the UI wins over
   # this instance-wide default, so it is never consulted. Changing it to
