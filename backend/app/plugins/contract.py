@@ -280,6 +280,10 @@ class Payload(_Model):
     contract: int
     accounts: list[Account] | None = None
     holdings: list[Holding] | None = None
+    movement_ids_are_unique: bool = False
+    """Every transaction `external_id` is one ledger movement the service never
+    re-reports under another id (a ledger API, not a bank feed). The sync then
+    skips the phantom-duplicate cleanup, which could only delete real repeats."""
 
     @model_validator(mode="after")
     def _checked(self) -> Payload:

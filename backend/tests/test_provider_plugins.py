@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -144,6 +145,21 @@ async def _rows(session, model, **where):
     for key, value in where.items():
         query = query.where(getattr(model, key) == value)
     return (await session.execute(query)).scalars().all()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unique", [True, False])
+async def test_a_ledger_payload_skips_the_phantom_cleanup(
+    session: AsyncSession, bank_connection, test_user, unique
+):
+    """A plugin whose ids are unique ledger movements (Bybit) opts out of the
+    phantom heuristic, which would otherwise delete real repeats."""
+    data = {**payload_data(), "movement_ids_are_unique": unique}
+    with patch(
+        "app.services.connection_service._cleanup_phantom_duplicates", new_callable=AsyncMock
+    ) as cleanup:
+        await _pipeline(session, bank_connection, data, test_user)
+    assert cleanup.await_count == (0 if unique else 1)
 
 
 @pytest.mark.asyncio

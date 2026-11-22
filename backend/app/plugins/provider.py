@@ -50,6 +50,7 @@ class PluginPayloadProvider(BankProvider):
         self._holdings = payload.holdings
         # Holdings that weren't fetched this run are left alone by the pipeline.
         self.holdings_fetched = payload.holdings is not None
+        self.movement_ids_are_unique = payload.movement_ids_are_unique
         # Accounts whose transactions weren't fetched this run: the pipeline
         # treats them as a partial feed (no phantom cleanup, `last_sync_at`
         # stays), as for a native fetch cut short.
