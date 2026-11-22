@@ -50,8 +50,6 @@ spec:
           env:
             - name: PLUGINS_EGRESS_PROXY
               value: securo-plugins-egress:3128
-            - name: PLUGINS_CALL_TIMEOUT
-              value: "180"
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
             - name: PLUGINS_RUNNER_TOKEN

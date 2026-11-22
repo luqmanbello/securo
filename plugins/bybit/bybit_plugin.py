@@ -282,6 +282,8 @@ class Plugin:
             "type": "checking",
             "balance": str(usd),
             "currency": "USD",
+            "institution_name": "Bybit",
+            "institution_logo": "bybit",
             "transactions": txs,
         }
         return {

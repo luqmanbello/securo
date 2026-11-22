@@ -378,7 +378,7 @@ async def test_plugin_writes_what_the_native_provider_writes(since):
     )
     # Through JSON, as the runner sends it.
     data = json.loads(json.dumps(reply["data"]))
-    payload = parse_payload(data, ["accounts", "transactions"])
+    payload = parse_payload(data, ["accounts", "transactions"], logos=["bybit"])
     assert payload is not None and payload.movement_ids_are_unique is True
     [account] = payload.accounts or []
     assert (account.external_id, account.name, account.type, account.currency, account.balance) == (
