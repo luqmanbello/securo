@@ -584,6 +584,8 @@ def _map_accounts(rows: Any, allowed_currencies: set[str]) -> list[dict]:
             "balance": str(balance),
             "currency": currency,
             "masked_number": _mask_last4(number),
+            "institution_name": "Access Bank",
+            "institution_logo": "accessbank",
         }
         for number, currency, account_type, balance in parsed
     ]

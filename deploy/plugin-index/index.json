@@ -1,3 +1,56 @@
 {
-  "plugins": []
+  "plugins": [
+    {
+      "id": "luqmanbello/accessbank",
+      "repository": "https://github.com/luqmanbello/securo",
+      "release": "v1.0.0",
+      "commit": "5009e3093148a1d4595b8a7ad4254d8e77402e1c",
+      "manifest": "accessbank.manifest.json",
+      "manifest_sha256": "f29b8486d1889c9ed551be730f70f6b22e6b2aa64fa87978f9cd52153ac2c3c0",
+      "archive": "accessbank.tar.gz",
+      "archive_sha256": "d648f25add2401ee824ab0e037d922f400f72f110494d2f40a7e1a33f9225e50",
+      "name": {
+        "en": "Access Bank"
+      },
+      "description": {
+        "en": "Reads balances and transaction history from Access Bank (Nigeria) internet banking. Read only: it never transfers, pays or changes anything."
+      },
+      "version": "1.0.0",
+      "license": "AGPL-3.0-only",
+      "min_securo_version": "0.21.0",
+      "contributes": {
+        "integrations": 1
+      },
+      "workspaces": [
+        "personal",
+        "business"
+      ]
+    },
+    {
+      "id": "luqmanbello/bybit",
+      "repository": "https://github.com/luqmanbello/securo",
+      "release": "v1.0.0",
+      "commit": "ab7e8fd99916902f8eb19af9529321ca4f1a1a0c",
+      "manifest": "bybit.manifest.json",
+      "manifest_sha256": "d3e61cc9736fdbf6b50d7f387f01f298ba27dec4f94018edafa76b52f2bc5c6f",
+      "archive": "bybit.tar.gz",
+      "archive_sha256": "fff4eb4fdb1ca417958191c2854f8d2984fd408c1de65959009729cd7a45e7c0",
+      "name": {
+        "en": "Bybit"
+      },
+      "description": {
+        "en": "Your Bybit balance and transactions as one USD account, from a read-only API key. Securo only accepts a read-only API key. It can see your balance and transactions but cannot trade or withdraw."
+      },
+      "version": "1.0.0",
+      "license": "AGPL-3.0-only",
+      "min_securo_version": "0.21.0",
+      "contributes": {
+        "integrations": 1
+      },
+      "workspaces": [
+        "personal",
+        "business"
+      ]
+    }
+  ]
 }

@@ -351,7 +351,7 @@ async def test_same_bank_responses_give_the_native_providers_ids_and_money(key):
 
         bank.calls.clear()
         result = _sync(bank, {"since": since.isoformat()}, currencies=currencies)
-        payload = parse_payload(result["data"], ["accounts", "transactions"])
+        payload = parse_payload(result["data"], ["accounts", "transactions"], logos=["accessbank"])
         assert payload is not None
         plugin_bodies = bank.bodies(ab._PATH_TRANSACTIONS)
         assert plugin_bodies == native_bodies

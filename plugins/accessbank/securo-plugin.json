@@ -23,8 +23,16 @@
         "description": "Enter your Access Bank internet-banking user ID and password to link your accounts. These are your internet-banking credentials. Securo uses them read-only, to fetch balances and transactions. The first sync only links; press Sync now or wait for the next run.",
         "auth": "credentials",
         "fields": [
-          {"key": "user_id", "label": "User ID", "secret": true},
-          {"key": "password", "label": "Password", "secret": true},
+          {
+            "key": "user_id",
+            "label": "User ID",
+            "secret": true
+          },
+          {
+            "key": "password",
+            "label": "Password",
+            "secret": true
+          },
           {
             "key": "import_currencies",
             "label": "Currencies to import, comma-separated (for example USD). Leave empty to import every account",
@@ -32,8 +40,14 @@
           }
         ],
         "sync_minutes": 60,
-        "provides": ["accounts", "transactions"]
+        "provides": [
+          "accounts",
+          "transactions"
+        ]
       }
     ]
+  },
+  "logos": {
+    "accessbank": "accessbank.png"
   }
 }

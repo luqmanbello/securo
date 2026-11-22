@@ -5,4 +5,8 @@ namespace: securo
 configMapGenerator:
   - name: securo-plugin-index
     files:
+      - accessbank.manifest.json
+      - accessbank.tar.gz
+      - bybit.manifest.json
+      - bybit.tar.gz
       - index.json
